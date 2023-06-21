@@ -1,22 +1,135 @@
 # Eyeball++
 eyeball_pp is a framework to evaluate and benchmark tasks which use llms.
 
-This framework helps you answer questions like:
-"Which llm is the best for my specific task?" 
-"Is my prompt change better for the different scenarios I've been testing?"
+This framework helps you answer questions like: "Which llm is the best for my specific task?" or "This prompt change looks good on the example I just tested, does it work with all the other things I've tested?"
 
-Your task can be arbitrary, the framework only cares about inputs and outputs.
-If you've been eyeballing how well your changes are working, this framework should fit right in and help you evaluate your task in a more methodical manner. Think of it as eyeball++
+Your task can be arbitrary, the framework only cares about initial inputs and final outputs.
+
+If you've been eyeballing how well your changes are working, this framework should fit right in and help you evaluate your task in a more methodical manner.
+
+# Installation
+eyeball_pp is a python library which can be installed via pip 
+
+`pip install eyeball_pp`
 
 # Concepts 
-## Record:
-eyeball_pp consists of a recorder which records your task runs as you are testing them and saves them as checkpoints. You can record task runs locally while developing them or from a production system. task_eval makes it very easy to do this. You can optionally record human feedback for those tasks too.
+The eyeball_pp has 3 simple concepts -- record, rerun and compare.
 
-## Rerun:
-You can then re-run these recorded examples as you make changes or re-run the recorded example with a set of parameters you want to evaluate (eg. model, temperature etc.). Each of these re-runs is saved as a new checkpoint.
+## Record
+eyeball_pp consists of a recorder which records your task runs as you are testing them and saves them as checkpoints. You can record this locally while developing or from a production system. You can optionally record human feedback for the task output too.
 
-## Compare:
-eyeball_pp lets you run comparisons across various checkpoints and tells you how your changes are performing. If the output of your task can be evaluated objectively then you can supply a custom comparator and if not you can just use the built in model graded eval. This will use a llm to figure out if your task output is solving the objective you want it to. And if you've been recording human feedback for your task runs, it will use this feedback to figure out what is a good output and what is not.
+```
+import eyeball_pp
 
-# Example
+@eyeball_pp.record_task
+def your_task_function(input_a, input_b):
+  # Your task can run arbitrary code
+  ...
+  return task_output
+```
+
+This will record every run of this function call as an example for future comparison. An `Example` is defined as a set of inputs eg. multiple runs of your_task_function(1, 2) are considered different `Checkpoints` for the same example and a run of your_task_function(3, 4) is a separate `Example`. 
+
+## Rerun
+You can then re-run these pre-recorded examples as you make changes. Each of these re-runs is saved as a new checkpoint for comparison later.
+
+```
+for vars in eval.rerun_recorded_examples():
+  your_task_function(vars['input_a'], vars['input_b'])
+```
+
+You can also re-run the examples with a set of parameters you want to evaluate (eg. model, temperature etc.) -- These params will show up in the comparison later and help you decide which params result in the best performance on your task.
+```
+for vars in eval.rerun_recorded_examples({'model': 'gpt-4', 'temperature': 0.7}, {'model': 'claude-v1'}):
+  your_task_function(vars['input_a'], vars['input_b'])
+
+# You can access these eval params from anywhere in your code
+@eyeball_pp.record_task
+def your_task_function(input_a, input_b):
+  ...
+  model = get_eval_params('model') or 'gpt-3.5-turbo'
+  temperature = get_eval_params('temperature') or 0.5
+```
+
+## Compare
+eyeball_pp lets you run comparisons across various checkpoints and tells you how your changes are performing. If the output of your task can be evaluated objectively then you can supply a custom comparator and if not you can just use the built in model graded eval. This will use a llm to figure out if your task output is solving the objective you want it to. And if you've been recording human feedback for your task runs, it will use this feedback to fine-tune the evaluator llm.
+
+```
+# The example below uses the built in model graded eval
+eyeball_pp.compare_recorded_checkpoints(task_objective="The task should answer questions based on the context provided and also show the sources")
+```
+
+Example output of the above command would be something like
+```
+Comparing Example(input_a=1, input_b=2)
+[improvement] `your_task_function.return_val` is better in checkpoint 2023-06-21T20:29:17.909680 (model=gpt-4, temperature=0.7) than 2023-06-21T20:29:16.189539 (model=None, temperature=None)
+[neutral] `your_task_function.return_val` is the same between checkpoints 2023-06-21T20:29:17.237979 (model=claude-v1, temperature=None) and 2023-06-21T20:29:19.286249 (model=gpt-4, temperature=0.7)
+
+Comparing Example(input_a=3, input_b=4)
+[regression] `your_task_function.return_val` got worse in checkpoint 2023-06-21T20:29:17.909680 (model=gpt-4, temperature=0.7) vs an older checkpoint 2023-06-21T20:29:16.189539 (model=None, temperature=None)
+[neutral] `your_task_function.return_val` is the same between checkpoints 2023-06-21T20:29:17.237979 (model=claude-v1, temperature=None) and 2023-06-21T20:29:19.286249 (model=gpt-4, temperature=0.7)
+```
+
+# Configuration 
+
+## Serialization
+For the `record_task` decorator you need to ensure that the inputs to the function and outputs are json serialable. If the variables are custom classes you can define the `to_json` and `from_json` functions on that object. If you want to skip serializing some inputs you can specify that in the decorator as `args_to_skip` 
+eg. 
+```
+@eyeball_pp.record_task(args_to_skip=["input_a"])
+def your_task_function(input_a, input_b: SomeComplexType) -> str:
+  ...
+  return task_output
+
+class SomeComplexType:
+  def to_json(self) -> str:
+    ...
+
+  def from_json(json_str: str) -> 'SomeComplexType':
+    ...  
+```
+
+## Sample rate 
+You can set the sample rate for recording, by default it's 1.0
+```
+# Set separate config for dev and production 
+if is_dev_build():
+  eyeball_pp.set_config(sample_rate=1.0, dir_path="/path/to/store/recorded/examples")
+else:
+  # More details on the api_key integration below
+  eyeball_pp.set_config(sample_rate=0.1, api_key=<eyeball_pp_apikey>)
+```
+
+## Custom example_id
+By default a unique example_id is created 
+```
+@eyeball_pp.record_task(example_id_arg_name='request_id', args_to_skip=['request_id'])
+def your_task_function(request_id, input_a, input_b):
+  ...
+  return task_output
+```
+
+## Refining the evaluator with Human feedback
+If you record human feedback from your production system you can always log that via the library
+```
+import eyeball_pp
+from eyeball_pp import ResponseFeedback
+
+eyeball_pp.record_human_feedback(example_id, response_feedback=ResponseFeedback.POSITIVE, feedback_details="I liked the response as it selected the sources correctly")
+```
+
+But you can also rate examples yourself 
+
+```
+eyeball_pp.rate_examples()
+```
+This will let you compare and rate examples yourself via the command line
+Example output of this command would look like:
+
+```
+
+```
+
+## I don't like decorators
+
 
