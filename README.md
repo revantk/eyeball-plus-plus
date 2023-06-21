@@ -61,11 +61,11 @@ eyeball_pp.compare_recorded_checkpoints(task_objective="The task should answer q
 
 Example output of the above command would be something like
 ```
-Comparing Example(input_a=1, input_b=2)
+Comparing last 3 checkpoints of Example(input_a=1, input_b=2)
 [improvement] `your_task_function.return_val` is better in checkpoint 2023-06-21T20:29:17.909680 (model=gpt-4, temperature=0.7) than 2023-06-21T20:29:16.189539 (model=None, temperature=None)
 [neutral] `your_task_function.return_val` is the same between checkpoints 2023-06-21T20:29:17.237979 (model=claude-v1, temperature=None) and 2023-06-21T20:29:19.286249 (model=gpt-4, temperature=0.7)
 
-Comparing Example(input_a=3, input_b=4)
+Comparing last 3 checkpoints of Example(input_a=3, input_b=4)
 [regression] `your_task_function.return_val` got worse in checkpoint 2023-06-21T20:29:17.909680 (model=gpt-4, temperature=0.7) vs an older checkpoint 2023-06-21T20:29:16.189539 (model=None, temperature=None)
 [neutral] `your_task_function.return_val` is the same between checkpoints 2023-06-21T20:29:17.237979 (model=claude-v1, temperature=None) and 2023-06-21T20:29:19.286249 (model=gpt-4, temperature=0.7)
 ```
