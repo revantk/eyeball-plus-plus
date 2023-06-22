@@ -62,12 +62,17 @@ eyeball_pp.compare_recorded_checkpoints(task_objective="The task should answer q
 Example output of the above command would be something like
 ```
 Comparing last 3 checkpoints of Example(input_a=1, input_b=2)
-[improvement] `your_task_function.return_val` is better in checkpoint 2023-06-21T20:29:17.909680 (model=gpt-4, temperature=0.7) than 2023-06-21T20:29:16.189539 (model=None, temperature=None)
+[improvement] `your_task_function.return_val` got better in checkpoint 2023-06-21T20:29:17.909680 (model=gpt-4, temperature=0.7) vs the older checkpoint 2023-06-21T20:29:16.189539 (model=None, temperature=None)
 [neutral] `your_task_function.return_val` is the same between checkpoints 2023-06-21T20:29:17.237979 (model=claude-v1, temperature=None) and 2023-06-21T20:29:19.286249 (model=gpt-4, temperature=0.7)
 
 Comparing last 3 checkpoints of Example(input_a=3, input_b=4)
-[regression] `your_task_function.return_val` got worse in checkpoint 2023-06-21T20:29:17.909680 (model=gpt-4, temperature=0.7) vs an older checkpoint 2023-06-21T20:29:16.189539 (model=None, temperature=None)
+[improvement] `your_task_function.return_val` got better in checkpoint 2023-06-21T20:29:17.909680 (model=gpt-4, temperature=0.7) vs an older checkpoint 2023-06-21T20:29:16.189539 (model=None, temperature=None)
 [neutral] `your_task_function.return_val` is the same between checkpoints 2023-06-21T20:29:17.237979 (model=claude-v1, temperature=None) and 2023-06-21T20:29:19.286249 (model=gpt-4, temperature=0.7)
+
+Summary:
+2/2 examples got better in their most recent runs
+The param combination (model=gpt-4, temperature=0.7) works better for 2/2 examples than the default params
+The param combination (model=claude-v1, temperature=None) works equally as good as the (model=gpt-4, temperature=0.7) combination for 2/2 examples
 ```
 
 # Configuration 
@@ -129,7 +134,15 @@ This will let you compare and rate examples yourself via the command line
 Example output of this command would look like:
 
 ```
+Consider Example(input_a=1, input_b=2):
+Does the output `4` fulfil the objecive of the task? (Y/n)
 
+Does the output `3` fulfil the objecive of the task? (Y/n)
+
+Which response is better? 
+A) `3` is better than `4`
+B) `4` is better than `3`
+C) Both are equivalent
 ```
 
 ## I don't like decorators
