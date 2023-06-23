@@ -158,6 +158,7 @@ class MemoryRecorder(EvalRecorder):
     ) -> Optional[Example]:
         if task_name not in self.tasks:
             return None
+
         task = self.tasks[task_name]
         if checkpoint_id is None:
             checkpoints = self.get_latest_checkpoints(
