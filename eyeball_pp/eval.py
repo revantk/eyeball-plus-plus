@@ -217,6 +217,9 @@ class Evaluator:
         else:
             return json.loads(value_str)
 
+    def new_function_which_does_nothing(self, input: str) -> str:
+        return f"Hello {input}"
+
     def _get_recorder_state(
         self,
         task_name: Optional[str] = None,
