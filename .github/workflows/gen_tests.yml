@@ -1,0 +1,18 @@
+name: Gen tests
+
+on:
+  pull_request:
+    types: [opened]
+  issue_comment:
+    types: [created]
+
+jobs:
+  gen-tests:
+    name: Generate Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Unit Test Generator
+        uses: revantk/gen-tests-action@0.1
+        with:
+          robustai-api-key: ${{ secrets.ROBUSTAI_API_KEY }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
