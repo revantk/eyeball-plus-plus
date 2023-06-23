@@ -211,6 +211,7 @@ class Evaluator:
             return passed_in_value
 
         value_str = example.variables[variable_name]
+
         if isinstance(passed_in_value, JsonSerializable):
             return passed_in_value.from_json(value_str)  # type: ignore
         else:
