@@ -3,7 +3,7 @@ from contextlib import contextmanager
 from enum import Enum
 import inspect
 import json
-from .recorders import MemoryRecorder, EvalRecorder
+from .recorders import MemoryRecorder, EvalRecorder, ResponseFeedback
 from .comparators import OutputComparator, model_graded_comparator
 
 import random
@@ -464,7 +464,7 @@ class Evaluator:
                 )
 
         if example_ids is None or len(example_ids) == 0:
-            example_ids = self.recorder.get_example_ids(task_name=task_name)
+            example_ids = self.recorder.get_input_hashes(task_name=task_name)
 
         try:
             self.mode = EvaluatorMode.RERUN_EXAMPLES
@@ -534,7 +534,7 @@ class Evaluator:
         example_ids_lst: list[str] = list(example_ids)
 
         if len(example_ids_lst) == 0:
-            example_ids_lst = self.recorder.get_example_ids(task_name=task_name)
+            example_ids_lst = self.recorder.get_input_hashes(task_name=task_name)
 
         try:
             self.mode = EvaluatorMode.RATE_EXAMPLES
@@ -543,6 +543,19 @@ class Evaluator:
                 pass
         finally:
             self.mode = EvaluatorMode.RECORD
+
+    def record_human_feedback(
+        self,
+        feedback: ResponseFeedback,
+        details: Optional[str] = None,
+        task_name: Optional[str] = None,
+        example_id: Optional[str] = None,
+        checkpoint_id: Optional[str] = None,
+    ):
+        task_name, example_id, checkpoint_id = self._get_recorder_state(
+            task_name, example_id, checkpoint_id
+        )
+        pass
 
     def compare_recorded_checkpoints(
         self,
@@ -569,7 +582,7 @@ class Evaluator:
                 task_objective is not None
             ), "Must provide an objective to compare or an output comparator"
 
-        example_ids_lst = self.recorder.get_example_ids(task_name)
+        example_ids_lst = self.recorder.get_input_hashes(task_name)
         random.shuffle(example_ids_lst)
         example_ids_lst = example_ids_lst[:num_examples_to_compare]
 

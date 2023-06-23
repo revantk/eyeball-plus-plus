@@ -5,6 +5,7 @@ from typing import Any, Optional, Protocol
 from dataclasses import dataclass
 import json
 import dataclasses
+from functools import _make_key
 
 
 class ResponseFeedback(Enum):
@@ -14,8 +15,7 @@ class ResponseFeedback(Enum):
 
 
 @dataclass
-class Example:
-    id: str
+class Checkpoint:
     checkpoint_id: str
     variables: dict[str, str]
     output_variable_names: set[str]
@@ -30,8 +30,11 @@ class Example:
             if var_name not in self.output_variable_names
         }
 
+    def get_input_hash(self) -> str:
+        return str(_make_key((), self.get_input_variables(), False).__hash__())
+
     def __str__(self) -> str:
-        msg = f"Example: {self.id} @ {self.checkpoint_id}\n"
+        msg = f"Example: {self.get_input_hash()} @ {self.checkpoint_id}\n"
         msg += "Input Variables:\n"
         for var_name, var_val in self.get_input_variables().items():
             msg += f"{var_name}={var_val}\n"
@@ -42,7 +45,6 @@ class EvalRecorder(Protocol):
     def record(
         self,
         task_name: str,
-        example_id: str,
         checkpoint_id: str,
         variable_name: str,
         value: str,
@@ -53,7 +55,6 @@ class EvalRecorder(Protocol):
     def set_eval_params(
         self,
         task_name: str,
-        example_id: str,
         checkpoint_id: str,
         params: dict[str, Any],
     ) -> None:
@@ -62,7 +63,6 @@ class EvalRecorder(Protocol):
     def set_response_feedback(
         self,
         task_name: str,
-        example_id: str,
         checkpoint_id: str,
         feedback: ResponseFeedback,
         details: Optional[str] = None,
@@ -70,16 +70,16 @@ class EvalRecorder(Protocol):
         ...
 
     def get_example(
-        self, task_name: str, example_id: str, checkpoint_id: Optional[str] = None
-    ) -> Optional[Example]:
+        self, task_name: str, checkpoint_id: Optional[str] = None
+    ) -> Optional[Checkpoint]:
         ...
 
     def get_latest_checkpoints(
-        self, task_name: str, example_id: str, num_checkpoints: int = 2
+        self, task_name: str, input_hash: str, num_checkpoints: int = 2
     ) -> list[str]:
         ...
 
-    def get_example_ids(self, task_name: str) -> list[str]:
+    def get_input_hashes(self, task_name: str) -> list[str]:
         ...
 
     def get_task_names(self) -> list[str]:
@@ -89,7 +89,7 @@ class EvalRecorder(Protocol):
 @dataclass
 class Task:
     name: str
-    records: dict[str, Example] = dataclasses.field(default_factory=dict)
+    records: dict[str, Checkpoint] = dataclasses.field(default_factory=dict)
     checkpoints: dict[str, set[str]] = dataclasses.field(default_factory=dict)
 
 
@@ -102,7 +102,7 @@ class MemoryRecorder(EvalRecorder):
 
     def _fetch_or_create_example(
         self, task_name: str, example_id: str, checkpoint_id: str
-    ) -> Example:
+    ) -> Checkpoint:
         if task_name not in self.tasks:
             task = Task(name=task_name)
             self.tasks[task_name] = task
@@ -116,7 +116,7 @@ class MemoryRecorder(EvalRecorder):
         task.checkpoints[example_id].add(checkpoint_id)
 
         if key not in task.records:
-            example = Example(
+            example = Checkpoint(
                 id=example_id,
                 checkpoint_id=checkpoint_id,
                 variables={},
@@ -155,7 +155,7 @@ class MemoryRecorder(EvalRecorder):
 
     def get_example(
         self, task_name: str, example_id: str, checkpoint_id: Optional[str] = None
-    ) -> Optional[Example]:
+    ) -> Optional[Checkpoint]:
         if task_name not in self.tasks:
             return None
         task = self.tasks[task_name]
@@ -174,7 +174,7 @@ class MemoryRecorder(EvalRecorder):
 
         return task.records[key]
 
-    def get_example_ids(self, task_name: str) -> list[str]:
+    def get_input_hashes(self, task_name: str) -> list[str]:
         task = self.tasks.get(task_name)
         if task is None:
             return []
@@ -254,7 +254,7 @@ class DiskRecorder(EvalRecorder):
 
     def get_example(
         self, task_name: str, example_id: str, checkpoint_id: Optional[str] = None
-    ) -> Optional[Example]:
+    ) -> Optional[Checkpoint]:
         return self.memory_recorder.get_example(task_name, example_id, checkpoint_id)
 
     def get_latest_checkpoints(
@@ -264,8 +264,8 @@ class DiskRecorder(EvalRecorder):
             task_name, example_id, num_checkpoints
         )
 
-    def get_example_ids(self, task_name: str) -> list[str]:
-        return self.memory_recorder.get_example_ids(task_name)
+    def get_input_hashes(self, task_name: str) -> list[str]:
+        return self.memory_recorder.get_input_hashes(task_name)
 
     def get_task_names(self) -> list[str]:
         return self.memory_recorder.get_task_names()
