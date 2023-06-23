@@ -1,4 +1,4 @@
-import eval
+import eyeball_pp
 import openai
 
 
@@ -7,7 +7,7 @@ class QAAgent:
         # Agent initialization code
         ...
 
-    @eval.record_task(args_to_record=["context", "question"])
+    @eyeball_pp.record_task(args_to_record=["context", "question"])
     def ask(self, context: str, question: str) -> str:
         # You can write arbitrary code here, the only thing the eval framework
         # cares about is the input and output of this function.
@@ -24,8 +24,8 @@ class QAAgent:
 
         # eval params can be set when you are trying to evaluate this agent
         # with different parameters eg. different models, providers or hyperparameters like temperature
-        model = eval.get_eval_param("model") or "gpt-3.5-turbo"
-        temperature = eval.get_eval_param("temperature") or 0.5
+        model = eyeball_pp.get_eval_param("model") or "gpt-3.5-turbo"
+        temperature = eyeball_pp.get_eval_param("temperature") or 0.5
 
         output = openai.ChatCompletion.create(  # type: ignore
             model=model,
@@ -52,12 +52,12 @@ if __name__ == "__main__":
         question="What color is the dog?",
     )
 
-    for input_vars in eval.rerun_recorded_examples(
+    for input_vars in eyeball_pp.rerun_recorded_examples(
         {"model": "gpt-4", "temperature": 0.7}
     ):
         print(input_vars)
         agent.ask(input_vars["context"], input_vars["question"])
 
-    eval.compare_recorded_checkpoints(
+    eyeball_pp.compare_recorded_checkpoints(
         task_objective="This agent tries to answer questions given a context. Verify that the agent answers the question correctly and that the answer is only based on the context.",
     )
