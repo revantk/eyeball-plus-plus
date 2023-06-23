@@ -1,13 +1,16 @@
 from collections import defaultdict
+from contextlib import contextmanager
 from enum import Enum
 import inspect
 import json
 import os
 import pickle
 import random
+import threading
 from typing import (
     Callable,
     Iterable,
+    Iterator,
     Protocol,
     TypeVar,
     Optional,
@@ -115,7 +118,7 @@ class Example:
 
     def get_input_variables(self) -> dict[str, str]:
         return {
-            var_name: var_val
+            var_name: json.loads(var_val)
             for var_name, var_val in self.variables.items()
             if var_name not in self.output_variable_names
         }
@@ -154,21 +157,27 @@ class EvaluatorConfig:
 class EvalRecorder(Protocol):
     def record(
         self,
+        task_name: str,
         example_id: str,
         checkpoint_id: str,
-        name: str,
+        variable_name: str,
         value: str,
         is_output: bool,
     ) -> None:
         ...
 
     def set_eval_params(
-        self, example_id: str, checkpoint_id: str, params: dict[str, Any]
+        self,
+        task_name: str,
+        example_id: str,
+        checkpoint_id: str,
+        params: dict[str, Any],
     ) -> None:
         ...
 
     def set_response_feedback(
         self,
+        task_name: str,
         example_id: str,
         checkpoint_id: str,
         feedback: ResponseFeedback,
@@ -177,32 +186,52 @@ class EvalRecorder(Protocol):
         ...
 
     def get_example(
-        self, example_id: str, checkpoint_id: Optional[str] = None
+        self, task_name: str, example_id: str, checkpoint_id: Optional[str] = None
     ) -> Optional[Example]:
         ...
 
     def get_latest_checkpoints(
-        self, example_id: str, num_checkpoints: int = 2
+        self, task_name: str, example_id: str, num_checkpoints: int = 2
     ) -> list[str]:
         ...
 
-    def get_example_ids(self) -> list[str]:
+    def get_example_ids(self, task_name: str) -> list[str]:
         ...
+
+    def get_task_names(self) -> list[str]:
+        ...
+
+
+@dataclass
+class Task:
+    name: str
+    records: dict[str, Example] = dataclasses.field(default_factory=dict)
+    checkpoints: dict[str, set[str]] = dataclasses.field(default_factory=dict)
 
 
 class MemoryRecorder(EvalRecorder):
     def __init__(self) -> None:
-        self.records: dict[str, Example] = {}
-        self.checkpoints: dict[str, set[str]] = defaultdict(set)
+        self.tasks: dict[str, Task] = {}
 
     def _example_key(self, example_id: str, checkpoint_id: str) -> str:
         return f"{example_id}:{checkpoint_id}"
 
-    def _fetch_or_create_example(self, example_id: str, checkpoint_id: str) -> Example:
-        key = self._example_key(example_id, checkpoint_id)
-        self.checkpoints[example_id].add(checkpoint_id)
+    def _fetch_or_create_example(
+        self, task_name: str, example_id: str, checkpoint_id: str
+    ) -> Example:
+        if task_name not in self.tasks:
+            task = Task(name=task_name)
+            self.tasks[task_name] = task
+        else:
+            task = self.tasks[task_name]
 
-        if key not in self.records:
+        key = self._example_key(example_id, checkpoint_id)
+        if example_id not in task.checkpoints:
+            task.checkpoints[example_id] = set()
+
+        task.checkpoints[example_id].add(checkpoint_id)
+
+        if key not in task.records:
             example = Example(
                 id=example_id,
                 checkpoint_id=checkpoint_id,
@@ -210,68 +239,89 @@ class MemoryRecorder(EvalRecorder):
                 output_variable_names=set(),
                 params={},
             )
-            self.records[key] = example
+            task.records[key] = example
             return example
         else:
-            return self.records[key]
+            return task.records[key]
 
     def record(
         self,
+        task_name: str,
         example_id: str,
         checkpoint_id: str,
-        name: str,
+        variable_name: str,
         value: str,
         is_output: bool,
     ) -> None:
-        example = self._fetch_or_create_example(example_id, checkpoint_id)
-        example.variables[name] = value
+        example = self._fetch_or_create_example(task_name, example_id, checkpoint_id)
+        example.variables[variable_name] = value
         if is_output:
-            example.output_variable_names.add(name)
+            example.output_variable_names.add(variable_name)
 
     def get_latest_checkpoints(
-        self, example_id: str, num_checkpoints: int = 2
+        self, task_name: str, example_id: str, num_checkpoints: int = 2
     ) -> list[str]:
-        if example_id not in self.checkpoints:
+        if task_name not in self.tasks:
+            return []
+        task = self.tasks[task_name]
+        if example_id not in task.checkpoints:
             return []
 
-        return sorted(self.checkpoints[example_id])[-num_checkpoints:]
+        return sorted(task.checkpoints[example_id])[-num_checkpoints:]
 
     def get_example(
-        self, example_id: str, checkpoint_id: Optional[str] = None
+        self, task_name: str, example_id: str, checkpoint_id: Optional[str] = None
     ) -> Optional[Example]:
+        if task_name not in self.tasks:
+            return None
+        task = self.tasks[task_name]
         if checkpoint_id is None:
-            checkpoints = self.get_latest_checkpoints(example_id, num_checkpoints=1)
+            checkpoints = self.get_latest_checkpoints(
+                task_name, example_id, num_checkpoints=1
+            )
             if len(checkpoints) == 0:
                 return None
             checkpoint_id = checkpoints[0]
 
         key = self._example_key(example_id, checkpoint_id)
 
-        if key not in self.records:
+        if key not in task.records:
             return None
 
-        return self.records[key]
+        return task.records[key]
 
-    def get_example_ids(self) -> list[str]:
-        return list(self.checkpoints.keys())
+    def get_example_ids(self, task_name: str) -> list[str]:
+        task = self.tasks.get(task_name)
+        if task is None:
+            return []
+
+        return list(task.checkpoints.keys())
 
     def set_eval_params(
-        self, example_id: str, checkpoint_id: str, params: dict[str, Any]
+        self,
+        task_name: str,
+        example_id: str,
+        checkpoint_id: str,
+        params: dict[str, Any],
     ) -> None:
-        example = self._fetch_or_create_example(example_id, checkpoint_id)
+        example = self._fetch_or_create_example(task_name, example_id, checkpoint_id)
         example.params.update(params)
 
     def set_response_feedback(
         self,
+        task_name: str,
         example_id: str,
         checkpoint_id: str,
         feedback: ResponseFeedback,
         details: str | None = None,
     ) -> None:
-        example = self._fetch_or_create_example(example_id, checkpoint_id)
+        example = self._fetch_or_create_example(task_name, example_id, checkpoint_id)
         example.feedback = feedback
         if details is not None:
             example.feedback_details = details
+
+    def get_task_names(self) -> list[str]:
+        return list(self.tasks.keys())
 
 
 class DiskRecorder(EvalRecorder):
@@ -285,6 +335,7 @@ class DiskRecorder(EvalRecorder):
 
     def record(
         self,
+        task_name: str,
         example_id: str,
         checkpoint_id: str,
         name: str,
@@ -295,35 +346,45 @@ class DiskRecorder(EvalRecorder):
         pickle.dump(self.memory_recorder, open(self.file_name, "wb"))
 
     def set_eval_params(
-        self, example_id: str, checkpoint_id: str, params: dict[str, Any]
+        self,
+        task_name: str,
+        example_id: str,
+        checkpoint_id: str,
+        params: dict[str, Any],
     ) -> None:
         self.memory_recorder.set_eval_params(example_id, checkpoint_id, params)
         pickle.dump(self.memory_recorder, open(self.file_name, "wb"))
 
     def set_response_feedback(
         self,
+        task_name: str,
         example_id: str,
         checkpoint_id: str,
         feedback: ResponseFeedback,
         details: str | None = None,
     ) -> None:
         self.memory_recorder.set_response_feedback(
-            example_id, checkpoint_id, feedback, details
+            task_name, example_id, checkpoint_id, feedback, details
         )
         pickle.dump(self.memory_recorder, open(self.file_name, "wb"))
 
     def get_example(
-        self, example_id: str, checkpoint_id: Optional[str] = None
+        self, task_name: str, example_id: str, checkpoint_id: Optional[str] = None
     ) -> Optional[Example]:
-        return self.memory_recorder.get_example(example_id, checkpoint_id)
+        return self.memory_recorder.get_example(task_name, example_id, checkpoint_id)
 
     def get_latest_checkpoints(
-        self, example_id: str, num_checkpoints: int = 2
+        self, task_name: str, example_id: str, num_checkpoints: int = 2
     ) -> list[str]:
-        return self.memory_recorder.get_latest_checkpoints(example_id, num_checkpoints)
+        return self.memory_recorder.get_latest_checkpoints(
+            task_name, example_id, num_checkpoints
+        )
 
-    def get_example_ids(self) -> list[str]:
-        return self.memory_recorder.get_example_ids()
+    def get_example_ids(self, task_name: str) -> list[str]:
+        return self.memory_recorder.get_example_ids(task_name)
+
+    def get_task_names(self) -> list[str]:
+        return self.memory_recorder.get_task_names()
 
 
 class EvaluatorMode(Enum):
@@ -339,8 +400,7 @@ class Evaluator:
         self.mode: EvaluatorMode = EvaluatorMode.RECORD
         # self.recorder = DiskRecorder(self.config.dir_path)
         self.recorder = MemoryRecorder()
-        self.reset_example_id()
-        self.checkpoint_id_to_rerun: Optional[str] = None
+        self.current_recorder_state = threading.local()
 
     def _get_config(self, **override_config_kwargs) -> EvaluatorConfig:
         return EvaluatorConfig._merge(self.config, **override_config_kwargs)
@@ -348,17 +408,42 @@ class Evaluator:
     def set_config(self, **config_kwargs) -> None:
         self.config = EvaluatorConfig._merge(self.config, **config_kwargs)
 
-    def reset_example_id(self) -> None:
-        self.set_example_id(uuid.uuid4().hex)
+    @contextmanager
+    def start_recording_session(
+        self,
+        task_name: str,
+        example_id: Optional[str] = None,
+        checkpoint_id: Optional[str] = None,
+        checkpoint_id_to_rerun: Optional[str] = None,
+    ) -> Iterator[None]:
+        if hasattr(self.current_recorder_state, "example_id"):
+            # This should not happen but if it does, we should not overwrite the previous example id
+            # Instead we should set it to None so there is no confusion
+            # If the user calls get_eval_params this will raise an error
+            self.current_recorder_state.example_id = None
+            self.current_recorder_state.task_name = None
+            self.current_recorder_state.recorder_checkpoint_id = None
+            self.current_recorder_state.checkpoint_id_to_rerun = None
+            yield None
+            return
 
-    def set_example_id(
-        self, example_id: str, recorder_checkpoint_id: Optional[str] = None
-    ) -> None:
-        self.recorder_example_id = example_id
-        if recorder_checkpoint_id is not None:
-            self.recorder_checkpoint_id = recorder_checkpoint_id
+        self.current_recorder_state.task_name = task_name
+        self.current_recorder_state.example_id = example_id or str(uuid.uuid4())
+        if checkpoint_id is not None:
+            self.current_recorder_state.recorder_checkpoint_id = checkpoint_id
         else:
-            self.recorder_checkpoint_id = datetime.datetime.utcnow().isoformat()
+            self.current_recorder_state.recorder_checkpoint_id = (
+                datetime.datetime.utcnow().isoformat()
+            )
+        self.current_recorder_state.checkpoint_id_to_rerun = checkpoint_id_to_rerun
+        print(
+            f"Starting recording session with attrs: {self.current_recorder_state.task_name}"
+        )
+        yield None
+
+        del self.current_recorder_state.example_id
+        del self.current_recorder_state.task_name
+        del self.current_recorder_state.recorder_checkpoint_id
 
     def _should_record(self, **config_kwargs) -> bool:
         if self.mode in (
@@ -372,16 +457,23 @@ class Evaluator:
             return False
         return config.sample_rate == 1.0 or random.random() < config.sample_rate
 
-    def record_or_replace_variable(
+    def record_input(
         self,
         variable_name: str,
         value: T,
         example_id: Optional[str] = None,
+        task_name: Optional[str] = None,
+        checkpoint_id: Optional[str] = None,
         **config_kwargs,
     ) -> T:
         if self._should_record(**config_kwargs):
-            return self._record_or_replace_variable(
-                variable_name, value, example_id=example_id, is_output=False
+            return self._record_variable(
+                task_name=task_name,
+                example_id=example_id,
+                recorder_checkpoint_id=checkpoint_id,
+                variable_name=variable_name,
+                value=value,
+                is_output=False,
             )
         else:
             return value
@@ -390,21 +482,29 @@ class Evaluator:
         self,
         variable_name: str,
         value: Any,
+        task_name: Optional[str] = None,
         example_id: Optional[str] = None,
+        checkpoint_id: Optional[str] = None,
         **config_kwargs,
     ) -> None:
         if self._should_record(**config_kwargs):
-            self._record_or_replace_variable(
-                variable_name, value, example_id=example_id, is_output=True
+            self._record_variable(
+                task_name=task_name,
+                example_id=example_id,
+                recorder_checkpoint_id=checkpoint_id,
+                variable_name=variable_name,
+                value=value,
+                is_output=True,
             )
 
     def _get_last_checkpoint_id(
         self,
+        task_name: str,
         example_id: str,
         current_checkpoint_id: str,
     ) -> Optional[str]:
         checkpoints = self.recorder.get_latest_checkpoints(
-            example_id, num_checkpoints=2
+            task_name, example_id, num_checkpoints=2
         )
 
         for checkpoint_id in reversed(checkpoints):
@@ -415,13 +515,14 @@ class Evaluator:
 
     def _fetch_variable_value(
         self,
+        task_name: str,
         variable_name: str,
         passed_in_value: T,
         example_id: str,
         checkpoint_id_to_fetch: str,
     ) -> T:
         example = self.recorder.get_example(
-            example_id, checkpoint_id=checkpoint_id_to_fetch
+            task_name, example_id, checkpoint_id=checkpoint_id_to_fetch
         )
         if example is None:
             return passed_in_value
@@ -431,67 +532,109 @@ class Evaluator:
 
         value_str = example.variables[variable_name]
         if isinstance(passed_in_value, JsonSerializable):
-            return passed_in_value.from_json(value_str)
+            return passed_in_value.from_json(value_str)  # type: ignore
         else:
             return json.loads(value_str)
+
+    def _get_recorder_state(
+        self,
+        task_name: Optional[str] = None,
+        example_id: Optional[str] = None,
+        recorder_checkpoint_id: Optional[str] = None,
+    ) -> tuple[str, str, str]:
+        if task_name is None and hasattr(self.current_recorder_state, "task_name"):
+            task_name = self.current_recorder_state.task_name
+        if task_name is None:
+            raise ValueError(
+                "Must provide a task name or start a recording session to record a variable"
+            )
+
+        if example_id is None and hasattr(self.current_recorder_state, "example_id"):
+            example_id = self.current_recorder_state.example_id
+        if example_id is None:
+            raise ValueError(
+                "Must provide an example id or start a recording session to record a variable"
+            )
+
+        if recorder_checkpoint_id is None and hasattr(
+            self.current_recorder_state, "recorder_checkpoint_id"
+        ):
+            recorder_checkpoint_id = self.current_recorder_state.recorder_checkpoint_id
+        if recorder_checkpoint_id is None:
+            raise ValueError(
+                "Must provide a checkpoint id or start a recording session to record a variable"
+            )
+
+        return task_name, example_id, recorder_checkpoint_id
+
+    def get_eval_params(
+        self,
+        task_name: Optional[str] = None,
+        example_id: Optional[str] = None,
+        checkpoint_id: Optional[str] = None,
+    ) -> Optional[dict[str, Any]]:
+        task_name, example_id, checkpoint_id = self._get_recorder_state(
+            task_name, example_id, checkpoint_id
+        )
+
+        example = self.recorder.get_example(
+            task_name=task_name, example_id=example_id, checkpoint_id=checkpoint_id
+        )
+        if example is None:
+            return None
+        return example.params
 
     def get_eval_param(
         self,
         param_name: str,
+        task_name: Optional[str] = None,
         example_id: Optional[str] = None,
         checkpoint_id: Optional[str] = None,
     ) -> Optional[Any]:
-        if example_id is None:
-            example_id = self.recorder_example_id
-
-        if checkpoint_id is None:
-            checkpoint_id = self.recorder_checkpoint_id
-
-        example = self.recorder.get_example(
-            example_id=example_id, checkpoint_id=checkpoint_id
-        )
-        if example is None:
+        params = self.get_eval_params(task_name, example_id, checkpoint_id)
+        if params is None:
             return None
+        return params.get(param_name)
 
-        return example.params.get(param_name, None)
-
-    def _record_or_replace_variable(
+    def _record_variable(
         self,
         variable_name: str,
         value: T,
         is_output: bool,
+        task_name: Optional[str] = None,
         example_id: Optional[str] = None,
         recorder_checkpoint_id: Optional[str] = None,
         checkpoint_id_to_rerun: Optional[str] = None,
     ) -> T:
+        task_name, example_id, recorder_checkpoint_id = self._get_recorder_state(
+            task_name, example_id, recorder_checkpoint_id
+        )
+
         if self.mode == EvaluatorMode.COMPARE_CHECKPOINTS:
             return value
 
-        if example_id is None:
-            example_id = self.recorder_example_id
+        # if (
+        #     self.mode == EvaluatorMode.RERUN_EXAMPLES
+        #     and not is_output
+        #     and checkpoint_id_to_rerun is not None
+        # ):
+        #     if checkpoint_id_to_rerun is None:
+        #         checkpoint_id_to_rerun = (
+        #             self.checkpoint_id_to_rerun
+        #             or self._get_last_checkpoint_id(
+        #                 task_name=task_name,
+        #                 example_id=example_id,
+        #                 current_checkpoint_id=recorder_checkpoint_id,
+        #             )
+        #         )
 
-        if recorder_checkpoint_id is None:
-            recorder_checkpoint_id = self.recorder_checkpoint_id
-
-        if checkpoint_id_to_rerun is None:
-            checkpoint_id_to_rerun = (
-                self.checkpoint_id_to_rerun
-                or self._get_last_checkpoint_id(
-                    example_id=example_id, current_checkpoint_id=recorder_checkpoint_id
-                )
-            )
-
-        if (
-            self.mode == EvaluatorMode.RERUN_EXAMPLES
-            and not is_output
-            and checkpoint_id_to_rerun is not None
-        ):
-            value = self._fetch_variable_value(
-                passed_in_value=value,
-                example_id=example_id,
-                checkpoint_id_to_fetch=checkpoint_id_to_rerun,
-                variable_name=variable_name,
-            )
+        #     value = self._fetch_variable_value(
+        #         task_name=task_name,
+        #         passed_in_value=value,
+        #         example_id=example_id,
+        #         checkpoint_id_to_fetch=checkpoint_id_to_rerun,
+        #         variable_name=variable_name,
+        #     )
 
         if isinstance(value, JsonSerializable):
             value_str = value.to_json()
@@ -499,10 +642,11 @@ class Evaluator:
             value_str = json.dumps(value)
 
         self.recorder.record(
-            example_id,
-            recorder_checkpoint_id,
-            variable_name,
-            value_str,
+            task_name=task_name,
+            example_id=example_id,
+            checkpoint_id=recorder_checkpoint_id,
+            variable_name=variable_name,
+            value=value_str,
             is_output=is_output,
         )
 
@@ -510,6 +654,7 @@ class Evaluator:
 
     def record_task(
         self,
+        task_name: Optional[str] = None,
         args_to_skip: list[str] = ["self"],
         example_id_arg_name: Optional[str] = None,
         reset_checkpoint_every_call: bool = True,
@@ -532,24 +677,27 @@ class Evaluator:
                     _,
                 ) = inspect.getfullargspec(fn)
 
-                base_name = fn.__qualname__
-                new_args = []
+                # Set task name
+                if self.mode == EvaluatorMode.RERUN_EXAMPLES:
+                    local_task_name = self.current_recorder_state.task_name
+                else:
+                    local_task_name = task_name or fn.__name__
 
                 # Set example id
                 if self.mode == EvaluatorMode.RERUN_EXAMPLES:
-                    example_id = self.recorder_example_id
+                    example_id = self.current_recorder_state.example_id
                 elif example_id_arg_name in kwargs:
                     example_id = str(kwargs[example_id_arg_name])
                 elif example_id_arg_name in fn_arg_names:
                     example_id = str(args[fn_arg_names.index(example_id_arg_name)])
                 else:
-                    example_id = (
-                        f"{base_name}.{_make_key(args, kwargs, False).__hash__()}"
-                    )
+                    example_id = str(_make_key(args, kwargs, False).__hash__())
 
                 # Set checkpoint id
                 if self.mode == EvaluatorMode.RERUN_EXAMPLES:
-                    recorder_checkpoint_id = self.recorder_checkpoint_id
+                    recorder_checkpoint_id = (
+                        self.current_recorder_state.recorder_checkpoint_id
+                    )
                 elif reset_checkpoint_every_call:
                     recorder_checkpoint_id = datetime.datetime.utcnow().isoformat()
                 else:
@@ -557,7 +705,11 @@ class Evaluator:
 
                 # Set params
                 if self.mode == EvaluatorMode.RERUN_EXAMPLES:
-                    params = self.get_eval_param(example_id, recorder_checkpoint_id)
+                    params = self.get_eval_params(
+                        task_name=local_task_name,
+                        example_id=example_id,
+                        checkpoint_id=recorder_checkpoint_id,
+                    )
                     # TODO: maybe we should not override with default params in this mode. Can lead to some confusion
                     if (params is None or len(params) == 0) and eval_params is not None:
                         self.recorder.set_eval_params(
@@ -568,35 +720,44 @@ class Evaluator:
                         example_id, recorder_checkpoint_id, eval_params
                     )
 
-                # Set example id and checkpoint id in case they were not set
-                self.set_example_id(example_id, recorder_checkpoint_id)
-
                 for arg_name, arg_val in zip(fn_arg_names, args):
                     if arg_name not in args_to_skip:
-                        arg_val = self._record_or_replace_variable(
-                            f"{base_name}.{arg_name}",
-                            arg_val,
+                        arg_val = self._record_variable(
+                            task_name=local_task_name,
+                            example_id=example_id,
+                            recorder_checkpoint_id=recorder_checkpoint_id,
+                            variable_name=arg_name,
+                            value=arg_val,
                             is_output=False,
                         )
-                    new_args.append(arg_val)
 
-                new_kwargs = {}
                 for kwarg_name, kwarg_val in kwargs.items():
                     if kwarg_name not in args_to_skip:
-                        kwarg_val = self._record_or_replace_variable(
-                            f"{base_name}.{kwarg_name}",
-                            kwarg_val,
+                        kwarg_val = self._record_variable(
+                            task_name=local_task_name,
+                            example_id=example_id,
+                            recorder_checkpoint_id=recorder_checkpoint_id,
+                            variable_name=kwarg_name,
+                            value=kwarg_val,
                             is_output=False,
                         )
-                    new_kwargs[kwarg_name] = kwarg_val
 
-                result = fn(*new_args, **new_kwargs)
+                if self.mode == EvaluatorMode.RERUN_EXAMPLES:
+                    result = fn(*args, **kwargs)
+                else:
+                    with self.start_recording_session(
+                        task_name=local_task_name,
+                        example_id=example_id,
+                        checkpoint_id=recorder_checkpoint_id,
+                    ):
+                        result = fn(*args, **kwargs)
 
-                self._record_or_replace_variable(
-                    f"{base_name}.return_val",
-                    result,
+                self._record_variable(
+                    task_name=local_task_name,
                     example_id=example_id,
                     recorder_checkpoint_id=recorder_checkpoint_id,
+                    variable_name="fn_return_val",
+                    value=result,
                     is_output=True,
                 )
                 return result
@@ -608,23 +769,40 @@ class Evaluator:
     def rerun_recorded_examples(
         self,
         *eval_params_list: dict[str, Any],
+        task_name: Optional[str] = None,
         example_ids: Optional[list[str]] = None,
-    ) -> Iterable[None]:
+    ) -> Iterable[dict[str, Any]]:
+        if task_name is None:
+            task_names = self.recorder.get_task_names()
+            if len(task_names) == 0:
+                raise ValueError("No task names found")
+            elif len(task_names) == 1:
+                task_name = task_names[0]
+            else:
+                raise ValueError(
+                    f"Must provide a task_name as you have multiple tasks recorded -- Found: {task_names}"
+                )
+
         if example_ids is None or len(example_ids) == 0:
-            example_ids = self.recorder.get_example_ids()
+            example_ids = self.recorder.get_example_ids(task_name=task_name)
 
         try:
             self.mode = EvaluatorMode.RERUN_EXAMPLES
             recorder_checkpoint_id = datetime.datetime.utcnow().isoformat()
 
             for example_id in example_ids:
-                last_checkpoind_id = self._get_last_checkpoint_id(example_id, "")
+                last_checkpoind_id = self._get_last_checkpoint_id(
+                    task_name, example_id, recorder_checkpoint_id
+                )
+                print(f"Last checkpoint id: {last_checkpoind_id}")
                 if last_checkpoind_id is None:
                     continue
 
                 self.checkpoint_id_to_rerun = last_checkpoind_id
                 example_to_rerun = self.recorder.get_example(
-                    example_id, last_checkpoind_id
+                    task_name=task_name,
+                    example_id=example_id,
+                    checkpoint_id=last_checkpoind_id,
                 )
                 if example_to_rerun is None:
                     continue
@@ -633,28 +811,51 @@ class Evaluator:
 
                 if len(eval_params_list) > 0:
                     for eval_params in eval_params_list:
-                        self.set_example_id(
-                            example_id, recorder_checkpoint_id=recorder_checkpoint_id
-                        )
-                        self.recorder.set_eval_params(
-                            example_id, recorder_checkpoint_id, eval_params
-                        )
-                        print(f"Using eval params: {eval_params}")
-                        yield None
+                        with self.start_recording_session(
+                            task_name=task_name,
+                            example_id=example_id,
+                            checkpoint_id=recorder_checkpoint_id,
+                            checkpoint_id_to_rerun=last_checkpoind_id,
+                        ):
+                            self.recorder.set_eval_params(
+                                task_name,
+                                example_id,
+                                recorder_checkpoint_id,
+                                eval_params,
+                            )
+                            print(f"Using eval params: {eval_params}")
+                            yield example_to_rerun.get_input_variables()
                 else:
                     print("Using default eval params")
-                    self.set_example_id(
-                        example_id,
-                    )
-                    yield None
+                    with self.start_recording_session(
+                        task_name=task_name,
+                        example_id=example_id,
+                        checkpoint_id=recorder_checkpoint_id,
+                    ):
+                        yield example_to_rerun.get_input_variables()
         finally:
             self.mode = EvaluatorMode.RECORD
 
-    def rate_recorded_examples(self, *example_ids: str) -> None:
+    def rate_recorded_examples(
+        self,
+        *example_ids: str,
+        task_name: Optional[str] = None,
+    ) -> None:
+        if task_name is None:
+            task_names = self.recorder.get_task_names()
+            if len(task_names) == 0:
+                raise ValueError("No task names found")
+            elif len(task_names) == 1:
+                task_name = task_names[0]
+            else:
+                raise ValueError(
+                    f"Must provide a task_name as you have multiple tasks recorded -- Found: {task_names}"
+                )
+
         example_ids_lst: list[str] = list(example_ids)
 
         if len(example_ids_lst) == 0:
-            example_ids_lst = self.recorder.get_example_ids()
+            example_ids_lst = self.recorder.get_example_ids(task_name=task_name)
 
         try:
             self.mode = EvaluatorMode.RATE_EXAMPLES
@@ -666,20 +867,32 @@ class Evaluator:
 
     def compare_recorded_checkpoints(
         self,
-        *example_ids: str,
+        task_name: Optional[str] = None,
+        num_examples_to_compare: int = 5,
         num_checkpoints_to_eval: int = 2,
         task_objective: Optional[str] = None,
         output_comparator: Optional[OutputComparator] = None,
     ) -> None:
+        if task_name is None:
+            task_names = self.recorder.get_task_names()
+            if len(task_names) == 0:
+                raise ValueError("No task names found")
+            elif len(task_names) == 1:
+                task_name = task_names[0]
+            else:
+                raise ValueError(
+                    f"Must provide a task_name as you have multiple tasks recorded -- Found: {task_names}"
+                )
+
         if output_comparator is None:
             output_comparator = model_graded_comparator
             assert (
                 task_objective is not None
             ), "Must provide an objective to compare or an output comparator"
 
-        example_ids_lst = list(example_ids)
-        if len(example_ids_lst) == 0:
-            example_ids_lst = self.recorder.get_example_ids()
+        example_ids_lst = self.recorder.get_example_ids(task_name)
+        random.shuffle(example_ids_lst)
+        example_ids_lst = example_ids_lst[:num_examples_to_compare]
 
         try:
             self.mode = EvaluatorMode.COMPARE_CHECKPOINTS
@@ -688,7 +901,9 @@ class Evaluator:
             checkpoint_to_succesful_examples: dict[str, int] = defaultdict(int)
 
             for example_id in example_ids_lst:
-                example = self.recorder.get_example(example_id)
+                example = self.recorder.get_example(
+                    task_name=task_name, example_id=example_id
+                )
                 if example is None:
                     continue
 
@@ -696,7 +911,7 @@ class Evaluator:
                     f"\n\nComparing {num_checkpoints_to_eval} checkpoints of {example}"
                 )
                 checkpoint_ids = self.recorder.get_latest_checkpoints(
-                    example_id, num_checkpoints=num_checkpoints_to_eval
+                    task_name, example_id, num_checkpoints=num_checkpoints_to_eval
                 )
 
                 to_compare = [
@@ -706,8 +921,16 @@ class Evaluator:
 
                 for checkpoint_a, checkpoint_b in to_compare:
                     print()
-                    example_a = self.recorder.get_example(example_id, checkpoint_a)
-                    example_b = self.recorder.get_example(example_id, checkpoint_b)
+                    example_a = self.recorder.get_example(
+                        task_name=task_name,
+                        example_id=example_id,
+                        checkpoint_id=checkpoint_a,
+                    )
+                    example_b = self.recorder.get_example(
+                        task_name=task_name,
+                        example_id=example_id,
+                        checkpoint_id=checkpoint_b,
+                    )
                     if example_a is None or example_b is None:
                         print(
                             f"Could not find example {example_id} for checkpoint {checkpoint_a} or {checkpoint_b}"
@@ -801,6 +1024,7 @@ _default_evaluator = Evaluator()
 
 
 def record_task(
+    task_name: Optional[str] = None,
     args_to_skip: list[str] = ["self"],
     example_id_arg_name: Optional[str] = None,
     reset_checkpoint_every_call: bool = True,
@@ -808,6 +1032,7 @@ def record_task(
     **config_kwargs,
 ) -> Callable:
     return _default_evaluator.record_task(
+        task_name=task_name,
         args_to_skip=args_to_skip,
         example_id_arg_name=example_id_arg_name,
         reset_checkpoint_every_call=reset_checkpoint_every_call,
@@ -820,52 +1045,80 @@ def set_config(**kwargs) -> None:
     _default_evaluator.set_config(**kwargs)
 
 
-def record_or_replace_variable(
-    tag: str, value: T, example_id: Optional[str] = None, **config_kwargs
+def record_input(
+    task_name: str,
+    variable_name: str,
+    value: T,
+    example_id: Optional[str] = None,
+    **config_kwargs,
 ) -> T:
-    return _default_evaluator.record_or_replace_variable(
-        tag, value, example_id=example_id, **config_kwargs
+    return _default_evaluator.record_input(
+        task_name=task_name,
+        variable_name=variable_name,
+        value=value,
+        example_id=example_id,
+        **config_kwargs,
     )
 
 
 def record_output(
-    variable_name: str, value: Any, example_id: Optional[str] = None, **config_kwargs
+    task_name: str,
+    variable_name: str,
+    value: Any,
+    example_id: Optional[str] = None,
+    **config_kwargs,
 ) -> None:
     return _default_evaluator.record_output(
-        variable_name, value, example_id=example_id, **config_kwargs
+        task_name=task_name,
+        variable_name=variable_name,
+        value=value,
+        example_id=example_id,
+        **config_kwargs,
     )
 
 
 def rerun_recorded_examples(
     *eval_params: dict[str, Any],
+    task_name: Optional[str] = None,
     example_ids: Optional[list[str]] = None,
-) -> Iterable[None]:
+) -> Iterable[dict[str, Any]]:
     return _default_evaluator.rerun_recorded_examples(
-        *eval_params, example_ids=example_ids
+        *eval_params, example_ids=example_ids, task_name=task_name
     )
 
 
 def rate_recorded_examples(
     *example_ids: str,
-) -> Iterable[None]:
-    return _default_evaluator.rate_recorded_examples(
-        *example_ids,
+    task_name: Optional[str] = None,
+) -> None:
+    return _default_evaluator.rate_recorded_examples(*example_ids, task_name=task_name)
+
+
+def get_eval_param(
+    param_name: str,
+    task_name: Optional[str] = None,
+    example_id: Optional[str] = None,
+    checkpoint_id: Optional[str] = None,
+) -> Optional[Any]:
+    return _default_evaluator.get_eval_param(
+        param_name,
+        task_name=task_name,
+        example_id=example_id,
+        checkpoint_id=checkpoint_id,
     )
 
 
-def get_eval_param(param_name: str) -> Optional[Any]:
-    return _default_evaluator.get_eval_param(param_name)
-
-
 def compare_recorded_checkpoints(
-    *example_ids: str,
+    task_name: Optional[str] = None,
     num_checkpoints_to_eval: int = 2,
+    num_examples_to_compare: int = 5,
     task_objective: Optional[str] = None,
     output_comparator: OutputComparator = model_graded_comparator,
 ) -> None:
     return _default_evaluator.compare_recorded_checkpoints(
-        *example_ids,
+        task_name=task_name,
         num_checkpoints_to_eval=num_checkpoints_to_eval,
         task_objective=task_objective,
         output_comparator=output_comparator,
+        num_examples_to_compare=num_examples_to_compare,
     )

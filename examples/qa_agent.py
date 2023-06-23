@@ -1,4 +1,4 @@
-from client.utils import eval
+import eval
 import openai
 
 
@@ -52,8 +52,11 @@ if __name__ == "__main__":
         question="What color is the dog?",
     )
 
-    for _ in eval.rerun_recorded_examples({"model": "gpt-4", "temperature": 0.7}):
-        agent.ask(_, _)
+    for input_vars in eval.rerun_recorded_examples(
+        {"model": "gpt-4", "temperature": 0.7}
+    ):
+        print(input_vars)
+        agent.ask(input_vars["context"], input_vars["question"])
 
     eval.compare_recorded_checkpoints(
         task_objective="This agent tries to answer questions given a context. Verify that the agent answers the question correctly and that the answer is only based on the context.",
