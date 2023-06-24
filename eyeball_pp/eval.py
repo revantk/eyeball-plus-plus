@@ -211,10 +211,14 @@ class Evaluator:
             return passed_in_value
 
         value_str = example.variables[variable_name]
+
         if isinstance(passed_in_value, JsonSerializable):
             return passed_in_value.from_json(value_str)  # type: ignore
         else:
             return json.loads(value_str)
+
+    def new_function_which_does_nothing(self, input: str) -> str:
+        return f"Hello {input}"
 
     def _get_recorder_state(
         self,
