@@ -1,53 +1,49 @@
 import pytest
-from unittest.mock import MagicMock
 
-def test_get_example_returns_none_when_task_name_does_not_exist():
+def test_get_example_returns_none_if_task_does_not_exist():
     recorder = MemoryRecorder()
-    example = recorder.get_example('nonexistent_task', 'example_id', 'checkpoint_id')
-    assert example is None
+    assert recorder.get_example('nonexistent_task', 'example_id') is None
 
-def test_get_example_returns_none_when_example_does_not_exist():
+def test_get_example_returns_none_if_example_does_not_exist():
     recorder = MemoryRecorder()
-    task = MagicMock()
-    task.records = {}
-    recorder.tasks = {'task_name': task}
-    example = recorder.get_example('task_name', 'nonexistent_example', 'checkpoint_id')
-    assert example is None
+    task = Task(name='task_name')
+    recorder.tasks['task_name'] = task
+    assert recorder.get_example('task_name', 'nonexistent_example_id') is None
 
-def test_get_example_returns_none_when_checkpoint_does_not_exist():
+def test_get_example_returns_none_if_checkpoint_does_not_exist():
     recorder = MemoryRecorder()
-    task = MagicMock()
-    task.records = {'example_id:checkpoint_id': MagicMock()}
-    recorder.tasks = {'task_name': task}
-    recorder.get_latest_checkpoints = MagicMock(return_value=[])
-    example = recorder.get_example('task_name', 'example_id', 'nonexistent_checkpoint')
-    assert example is None
+    task = Task(name='task_name')
+    example = Example(id='example_id', checkpoint_id='checkpoint_id', variables={}, output_variable_names=set(), params={})
+    task.records['example_id:checkpoint_id'] = example
+    recorder.tasks['task_name'] = task
+    assert recorder.get_example('task_name', 'example_id', 'nonexistent_checkpoint_id') is None
 
-def test_get_example_returns_latest_checkpoint_when_checkpoint_id_is_none():
+def test_get_example_returns_latest_checkpoint_if_checkpoint_id_not_provided():
     recorder = MemoryRecorder()
-    task = MagicMock()
-    example = Example(id='example_id', checkpoint_id='latest_checkpoint', variables={}, output_variable_names=set(), params={}, feedback=None, feedback_details=None)
-    task.records = {'example_id:latest_checkpoint': example}
-    recorder.tasks = {'task_name': task}
-    recorder.get_latest_checkpoints = MagicMock(return_value=['latest_checkpoint'])
-    result = recorder.get_example('task_name', 'example_id', None)
-    assert result == example
+    task = Task(name='task_name')
+    example1 = Example(id='example_id', checkpoint_id='checkpoint_id1', variables={}, output_variable_names=set(), params={})
+    example2 = Example(id='example_id', checkpoint_id='checkpoint_id2', variables={}, output_variable_names=set(), params={})
+    task.records['example_id:checkpoint_id1'] = example1
+    task.records['example_id:checkpoint_id2'] = example2
+    task.checkpoints['example_id'] = {'checkpoint_id1', 'checkpoint_id2'}
+    recorder.tasks['task_name'] = task
+    assert recorder.get_example('task_name', 'example_id') == example2
 
-def test_get_example_returns_specified_checkpoint_when_checkpoint_id_is_not_none():
+def test_get_example_returns_specified_checkpoint_if_checkpoint_id_provided():
     recorder = MemoryRecorder()
-    task = MagicMock()
-    example = Example(id='example_id', checkpoint_id='specified_checkpoint', variables={}, output_variable_names=set(), params={}, feedback=None, feedback_details=None)
-    task.records = {'example_id:specified_checkpoint': example}
-    recorder.tasks = {'task_name': task}
-    result = recorder.get_example('task_name', 'example_id', 'specified_checkpoint')
-    assert result == example
+    task = Task(name='task_name')
+    example1 = Example(id='example_id', checkpoint_id='checkpoint_id1', variables={}, output_variable_names=set(), params={})
+    example2 = Example(id='example_id', checkpoint_id='checkpoint_id2', variables={}, output_variable_names=set(), params={})
+    task.records['example_id:checkpoint_id1'] = example1
+    task.records['example_id:checkpoint_id2'] = example2
+    task.checkpoints['example_id'] = {'checkpoint_id1', 'checkpoint_id2'}
+    recorder.tasks['task_name'] = task
+    assert recorder.get_example('task_name', 'example_id', 'checkpoint_id1') == example1
 
-def test_get_example_returns_none_when_task_name_is_none():
+def test_get_example_returns_example_with_feedback():
     recorder = MemoryRecorder()
-    example = recorder.get_example(None, 'example_id', 'checkpoint_id')
-    assert example is None
-
-def test_get_example_returns_none_when_example_id_is_none():
-    recorder = MemoryRecorder()
-    example = recorder.get_example('task_name', None, 'checkpoint_id')
-    assert example is None
+    task = Task(name='task_name')
+    example = Example(id='example_id', checkpoint_id='checkpoint_id', variables={}, output_variable_names=set(), params={}, feedback=ResponseFeedback.POSITIVE, feedback_details='Good job!')
+    task.records['example_id:checkpoint_id'] = example
+    recorder.tasks['task_name'] = task
+    assert recorder.get_example('task_name', 'example_id') == example
