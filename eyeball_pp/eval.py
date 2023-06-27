@@ -445,7 +445,7 @@ class Evaluator:
         try:
             self.mode = EvaluatorMode.RERUN_EXAMPLES
             rerun_metadata = {
-                "id:": datetime.datetime.utcnow().isoformat(),
+                "id": datetime.datetime.utcnow().isoformat(),
             }
 
             for input_hash in input_hashes:
@@ -467,6 +467,10 @@ class Evaluator:
                     continue
 
                 print(f"\n\nRerunning {checkpoint_to_rerun}")
+                input_vars = {
+                    k: json.loads(v)
+                    for k, v in checkpoint_to_rerun.get_input_variables().items()
+                }
 
                 if len(eval_params_list) > 0:
                     for eval_params in eval_params_list:
@@ -482,7 +486,7 @@ class Evaluator:
                                 rerun_metadata=rerun_metadata,
                             )
                             print(f"Using eval params: {eval_params}")
-                            yield checkpoint_to_rerun.get_input_variables()
+                            yield input_vars
                 else:
                     print("Using default eval params")
                     with self.start_recording_session(
@@ -495,7 +499,7 @@ class Evaluator:
                             eval_params={},
                             rerun_metadata=rerun_metadata,
                         )
-                        yield checkpoint_to_rerun.get_input_variables()
+                        yield input_vars
         finally:
             self.mode = EvaluatorMode.RECORD
 
@@ -567,7 +571,6 @@ class Evaluator:
         random.shuffle(input_hashes_list)
         input_hashes_list = input_hashes_list[:num_examples_to_compare]
 
-        print(input_hashes_list)
         try:
             self.mode = EvaluatorMode.COMPARE_CHECKPOINTS
 
@@ -599,11 +602,13 @@ class Evaluator:
                         task_name=task_name,
                         checkpoint_id=checkpoint_id_b,
                     )
+
                     if checkpoint_a is None or checkpoint_b is None:
                         print(
                             f"Could not find example {input_hash} for checkpoint {checkpoint_id_a} or {checkpoint_id_b}"
                         )
                         continue
+
                     for var_name in checkpoint_a.output_variable_names:
                         if var_name not in checkpoint_b.output_variable_names:
                             print(
@@ -652,38 +657,42 @@ class Evaluator:
                             f"{k}={v}" for k, v in checkpoint_b.eval_params.items()
                         )
 
+                        rerun_id_a = (
+                            checkpoint_a.rerun_metadata.get("id")
+                            if checkpoint_a.rerun_metadata is not None
+                            else None
+                        )
+                        rerun_id_b = (
+                            checkpoint_b.rerun_metadata.get("id")
+                            if checkpoint_b.rerun_metadata is not None
+                            else None
+                        )
+
                         if comparator_result == 0:
                             print(
                                 f"{ORANGE}[neutral] `{var_name}` is the same between checkpoints {checkpoint_id_a} {a_unique_params_str} & {checkpoint_id_b} {b_unique_params_str} {END_CLR}"
                             )
                             params_to_succesful_examples[a_params_str] += 1
                             params_to_succesful_examples[b_params_str] += 1
-                            if (
-                                checkpoint_a.rerun_metadata is not None
-                                and "id" in checkpoint_a.rerun_metadata
-                            ):
-                                rerun_to_succesful_examples[
-                                    checkpoint_a.rerun_metadata["id"]
-                                ] += 1
-                            if (
-                                checkpoint_b.rerun_metadata is not None
-                                and "id" in checkpoint_b.rerun_metadata
-                            ):
-                                rerun_to_succesful_examples[
-                                    checkpoint_b.rerun_metadata["id"]
-                                ] += 1
+                            if rerun_id_a is not None:
+                                rerun_to_succesful_examples[rerun_id_a] += 1
+                            if rerun_id_b is not None:
+                                rerun_to_succesful_examples[rerun_id_b] += 1
                         elif comparator_result < 0:
                             print(
                                 f"{RED}[regression] `{var_name}` was better in checkpoint {checkpoint_id_a} {a_unique_params_str} than {checkpoint_id_b} {b_unique_params_str} {END_CLR}"
                             )
                             params_to_succesful_examples[a_params_str] += 1
-                            rerun_to_succesful_examples[checkpoint_id_a] += 1
+                            if rerun_id_a is not None:
+                                rerun_to_succesful_examples[rerun_id_a] += 1
                         else:
                             print(
                                 f"{GREEN}[improvement] `{var_name}` improved from checkpoint {checkpoint_id_a} {a_unique_params_str} to {checkpoint_id_b} {b_unique_params_str}{END_CLR}"
                             )
                             params_to_succesful_examples[b_params_str] += 1
-                            rerun_to_succesful_examples[checkpoint_id_b] += 1
+                            if rerun_id_b is not None:
+                                rerun_to_succesful_examples[rerun_id_b] += 1
+
             print("\nSummary:")
             print("---------")
             print("Your most sucessful re-runs:")

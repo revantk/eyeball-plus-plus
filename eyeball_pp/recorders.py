@@ -1,11 +1,11 @@
+import hashlib
+import json
 import os
 import pickle
 from enum import Enum
 from typing import Any, Optional, Protocol
 from dataclasses import dataclass
-import json
 import dataclasses
-from functools import _make_key
 
 
 class ResponseFeedback(Enum):
@@ -26,7 +26,7 @@ class Checkpoint:
 
     def get_input_variables(self) -> dict[str, str]:
         return {
-            var_name: json.loads(var_val)
+            var_name: var_val
             for var_name, var_val in self.variables.items()
             if var_name not in self.output_variable_names
         }
@@ -34,13 +34,14 @@ class Checkpoint:
     def get_input_hash(self) -> str:
         sorted_input_vars = sorted(
             [
-                (var_name, var_val)
+                (str(var_name), str(var_val))
                 for var_name, var_val in self.variables.items()
                 if var_name not in self.output_variable_names
             ],
             key=lambda x: x[0],
         )
-        return str(hash(tuple(sorted_input_vars)))
+        input_var_str = json.dumps(sorted_input_vars)
+        return hashlib.sha256(input_var_str.encode("utf-8")).hexdigest()
 
     def __str__(self) -> str:
         msg = f"Example: {self.get_input_hash()} @ {self.checkpoint_id}\n"
@@ -136,9 +137,15 @@ class MemoryRecorder(EvalRecorder):
         task = self.tasks[task_name]
         checkpoint_id = checkpoint.checkpoint_id
 
+        input_hashes_to_remove = []
         for input_hash in task.input_hashes:
             if checkpoint_id in task.input_hashes[input_hash]:
                 task.input_hashes[input_hash].remove(checkpoint_id)
+            if len(task.input_hashes[input_hash]) == 0:
+                input_hashes_to_remove.append(input_hash)
+
+        for input_hash in input_hashes_to_remove:
+            del task.input_hashes[input_hash]
 
         # Add the checkpoint to the new input hash
         input_hash = checkpoint.get_input_hash()
