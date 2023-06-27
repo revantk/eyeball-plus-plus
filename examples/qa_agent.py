@@ -7,7 +7,7 @@ class QAAgent:
         # Agent initialization code
         ...
 
-    @eyeball_pp.record_task(args_to_record=["context", "question"])
+    @eyeball_pp.record_task()
     def ask(self, context: str, question: str) -> str:
         # You can write arbitrary code here, the only thing the eval framework
         # cares about is the input and output of this function.

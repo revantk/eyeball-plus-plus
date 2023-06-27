@@ -16,8 +16,9 @@ eyeball_pp is a python library which can be installed via pip
 The eyeball_pp has 3 simple concepts -- record, rerun and compare.
 
 ## Record
-eyeball_pp consists of a recorder which records your task runs as you are testing them and saves them as checkpoints. You can record this locally while developing or from a production system. You can optionally record human feedback for the task output too.
+eyeball_pp consists of a recorder which records the inputs and outputs of your task runs as you are running it and saves them as checkpoints. You can record this locally while developing or from a production system. You can optionally record human feedback for the task output too.
 
+You can record your task using the `record_task` decorator. This will record every run of this function call as a `Checkpoint` for future comparison.
 ```python
 import eyeball_pp
 
@@ -28,27 +29,49 @@ def your_task_function(input_a, input_b):
   return task_output
 ```
 
-This will record every run of this function call as an example for future comparison. An `Example` is defined as a set of inputs eg. multiple runs of your_task_function(1, 2) are considered different `Checkpoints` for the same example and a run of your_task_function(3, 4) is a separate `Example`. 
+If your sytem is more complicated, you can also use the `record_input` and `record_output` functions with the start_recording_session context manager
+```python
+import eyeball_pp
 
-## Rerun
-You can then re-run these pre-recorded examples as you make changes. Each of these re-runs is saved as a new checkpoint for comparison later.
+# your task code 
+...
+with eyeball_pp.start_recording_session(task_name="your_task", checkpoint_id="some_custom_unique_id"):
+  eyeball_pp.record_input('input_a', input_a_value)
+  eyeball_pp.record_input('input_b', input_b_value)
+  ...
+  eyeball_pp.record_output('output', output)
+```
+
+OR without the context manager.. 
 
 ```python
-for vars in eval.rerun_recorded_examples():
-  your_task_function(vars['input_a'], vars['input_b'])
+eyeball_pp.record_input(task_name="your_task", checkpoint_id="some_custom_unique_id", variable_name="input_a", value=input_a_value)
+..
+eyeball_pp.record_output(task_name="your_task", checkpoint_id="some_custom_unique_id", variable_name='output', output=output)
+```
+
+## Rerun
+You can then re-run these pre-recorded examples as you make changes. This will only re-run each unique set of input variables. eg. if you recorded a run of `your_task_function(1, 2)` 5 times and `your_task_function(3, 4)` 2 times, the re-run would only run 2 examples -- (1, 2) and (3, 4). Each of these re-runs is saved as a new checkpoint for comparison later. 
+```python
+from eyeball_pp import rerun_recorded_examples 
+
+for input_vars in rerun_recorded_examples():
+  your_task_function(input_vars['input_a'], input_vars['input_b'])
 ```
 
 You can also re-run the examples with a set of parameters you want to evaluate (eg. model, temperature etc.) -- These params will show up in the comparison later and help you decide which params result in the best performance on your task.
 ```python
-for vars in eval.rerun_recorded_examples({'model': 'gpt-4', 'temperature': 0.7}, {'model': 'claude-v1'}):
+from eyeball_pp import get_eval_param, rerun_recorded_examples 
+
+for vars in rerun_recorded_examples({'model': 'gpt-4', 'temperature': 0.7}, {'model': 'claude-v1'}):
   your_task_function(vars['input_a'], vars['input_b'])
 
 # You can access these eval params from anywhere in your code
 @eyeball_pp.record_task
 def your_task_function(input_a, input_b):
   ...
-  model = get_eval_params('model') or 'gpt-3.5-turbo'
-  temperature = get_eval_params('temperature') or 0.5
+  model = get_eval_param('model') or 'gpt-3.5-turbo'
+  temperature = get_eval_param('temperature') or 0.5
 ```
 
 ## Compare
@@ -143,16 +166,6 @@ Which response is better?
 A) `3` is better than `4`
 B) `4` is better than `3`
 C) Both are equivalent
-```
-
-## I don't like decorators
-The `record_task` decorator is just a convenience function around a few basic recorder functions 
-
-```python
-eyeball_pp.record_input(example_id="custom_example_id", variable_name="input_a", value=1)
-eyeball_pp.record_input(example_id="custom_example_id", variable_name="input_b", value=2)
-...
-eyeball_pp.record_output(example_id="custom_example_id", variable_name="your_task_function_output", value=4)
 ```
 
 ## Api key 
