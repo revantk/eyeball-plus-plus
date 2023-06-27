@@ -256,8 +256,8 @@ class Evaluator:
 
     def record_task(
         self,
+        args_to_record: list[str],
         task_name: Optional[str] = None,
-        args_to_skip: list[str] = ["self"],
         checkpoint_id_arg_name: Optional[str] = None,
         eval_params: Optional[dict[str, Any]] = None,
         **config_kwargs,
@@ -326,7 +326,7 @@ class Evaluator:
                     )
 
                 for arg_name, arg_val in zip(fn_arg_names, args):
-                    if arg_name not in args_to_skip:
+                    if arg_name in args_to_record:
                         self.record_input(
                             task_name=local_task_name,
                             checkpoint_id=recorder_checkpoint_id,
@@ -335,7 +335,7 @@ class Evaluator:
                         )
 
                 for kwarg_name, kwarg_val in kwargs.items():
-                    if kwarg_name not in args_to_skip:
+                    if kwarg_name in args_to_record:
                         self.record_input(
                             task_name=local_task_name,
                             checkpoint_id=recorder_checkpoint_id,
