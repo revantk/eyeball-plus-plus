@@ -3,8 +3,9 @@ from contextlib import contextmanager
 from enum import Enum
 import inspect
 import json
-from .recorders import DiskRecorder, MemoryRecorder, EvalRecorder, ResponseFeedback
-from .comparators import OutputComparator, model_graded_comparator
+from .recorders import ComparisonResult, DiskRecorder, MemoryRecorder, EvalRecorder
+from .comparators import model_graded_comparator
+from .classes import FeedbackResult, OutputComparator, OutputScorer, OutputFeedback
 
 import random
 import threading
@@ -18,10 +19,9 @@ from typing import (
     Any,
     runtime_checkable,
 )
-from functools import _make_key, wraps
+from functools import wraps
 from dataclasses import dataclass
 import dataclasses
-import uuid
 import datetime
 
 GREEN = "\x1b[32m"
@@ -122,10 +122,10 @@ class Evaluator:
         del self.current_recorder_state.recorder_checkpoint_id
 
     def _should_record(self, **config_kwargs) -> bool:
-        if self.mode in (
-            EvaluatorMode.COMPARE_CHECKPOINTS,
-            EvaluatorMode.RERUN_EXAMPLES,
-        ):
+        if self.mode == EvaluatorMode.COMPARE_CHECKPOINTS:
+            return False
+
+        if self.mode == EvaluatorMode.RERUN_EXAMPLES:
             return True
 
         config = self._get_config(**config_kwargs)
@@ -140,33 +140,35 @@ class Evaluator:
         task_name: Optional[str] = None,
         checkpoint_id: Optional[str] = None,
         **config_kwargs,
-    ) -> T:
+    ) -> None:
         if self._should_record(**config_kwargs):
-            return self._record_variable(
-                task_name=task_name,
-                recorder_checkpoint_id=checkpoint_id,
-                variable_name=variable_name,
-                value=value,
-                is_output=False,
+            task_name, checkpoint_id = self._get_recorder_state(
+                task_name, checkpoint_id
             )
-        else:
-            return value
+
+            serialized_value = self._serialize(value)
+            self.recorder.record_input_variable(
+                task_name=task_name,
+                checkpoint_id=checkpoint_id,
+                variable_name=variable_name,
+                value=serialized_value,
+            )
 
     def record_output(
         self,
-        variable_name: str,
         value: Any,
         task_name: Optional[str] = None,
         checkpoint_id: Optional[str] = None,
         **config_kwargs,
     ) -> None:
         if self._should_record(**config_kwargs):
-            self._record_variable(
+            task_name, checkpoint_id = self._get_recorder_state(
+                task_name, checkpoint_id
+            )
+            self.recorder.record_output(
                 task_name=task_name,
-                recorder_checkpoint_id=checkpoint_id,
-                variable_name=variable_name,
-                value=value,
-                is_output=True,
+                checkpoint_id=checkpoint_id,
+                output=self._serialize(value),
             )
 
     def _get_last_checkpoint_id(
@@ -184,28 +186,6 @@ class Evaluator:
                 continue
             return checkpoint_id
         return None
-
-    def _fetch_variable_value(
-        self,
-        task_name: str,
-        variable_name: str,
-        passed_in_value: T,
-        checkpoint_id_to_fetch: str,
-    ) -> T:
-        example = self.recorder.get_checkpoint(
-            task_name=task_name, checkpoint_id=checkpoint_id_to_fetch
-        )
-        if example is None:
-            return passed_in_value
-
-        if variable_name not in example.variables:
-            return passed_in_value
-
-        value_str = example.variables[variable_name]
-        if isinstance(passed_in_value, JsonSerializable):
-            return passed_in_value.from_json(value_str)  # type: ignore
-        else:
-            return json.loads(value_str)
 
     def _get_recorder_state(
         self,
@@ -255,59 +235,11 @@ class Evaluator:
             return None
         return params.get(param_name)
 
-    def _record_variable(
-        self,
-        variable_name: str,
-        value: T,
-        is_output: bool,
-        task_name: Optional[str] = None,
-        recorder_checkpoint_id: Optional[str] = None,
-        checkpoint_id_to_rerun: Optional[str] = None,
-    ) -> T:
-        task_name, recorder_checkpoint_id = self._get_recorder_state(
-            task_name, recorder_checkpoint_id
-        )
-
-        if self.mode == EvaluatorMode.COMPARE_CHECKPOINTS:
-            return value
-
-        # if (
-        #     self.mode == EvaluatorMode.RERUN_EXAMPLES
-        #     and not is_output
-        #     and checkpoint_id_to_rerun is not None
-        # ):
-        #     if checkpoint_id_to_rerun is None:
-        #         checkpoint_id_to_rerun = (
-        #             self.checkpoint_id_to_rerun
-        #             or self._get_last_checkpoint_id(
-        #                 task_name=task_name,
-        #                 example_id=example_id,
-        #                 current_checkpoint_id=recorder_checkpoint_id,
-        #             )
-        #         )
-
-        #     value = self._fetch_variable_value(
-        #         task_name=task_name,
-        #         passed_in_value=value,
-        #         example_id=example_id,
-        #         checkpoint_id_to_fetch=checkpoint_id_to_rerun,
-        #         variable_name=variable_name,
-        #     )
-
+    def _serialize(self, value: T) -> str:
         if isinstance(value, JsonSerializable):
-            value_str = value.to_json()
+            return value.to_json()
         else:
-            value_str = json.dumps(value)
-
-        self.recorder.record(
-            task_name=task_name,
-            checkpoint_id=recorder_checkpoint_id,
-            variable_name=variable_name,
-            value=value_str,
-            is_output=is_output,
-        )
-
-        return value
+            return json.dumps(value)
 
     def record_task(
         self,
@@ -319,7 +251,7 @@ class Evaluator:
     ) -> Callable[..., Callable]:
         def _decorator(fn: Callable[..., T]) -> Callable[..., T]:
             @wraps(fn)
-            def _wrapper(*args, **kwargs):
+            def _wrapper(*args, **kwargs) -> Any:
                 if not self._should_record(**config_kwargs):
                     return fn(*args, **kwargs)
 
@@ -382,39 +314,35 @@ class Evaluator:
 
                 for arg_name, arg_val in zip(fn_arg_names, args):
                     if arg_name not in args_to_skip:
-                        arg_val = self._record_variable(
+                        self.record_input(
                             task_name=local_task_name,
-                            recorder_checkpoint_id=recorder_checkpoint_id,
+                            checkpoint_id=recorder_checkpoint_id,
                             variable_name=arg_name,
                             value=arg_val,
-                            is_output=False,
                         )
 
                 for kwarg_name, kwarg_val in kwargs.items():
                     if kwarg_name not in args_to_skip:
-                        kwarg_val = self._record_variable(
+                        self.record_input(
                             task_name=local_task_name,
-                            recorder_checkpoint_id=recorder_checkpoint_id,
+                            checkpoint_id=recorder_checkpoint_id,
                             variable_name=kwarg_name,
                             value=kwarg_val,
-                            is_output=False,
                         )
 
                 if self.mode == EvaluatorMode.RERUN_EXAMPLES:
-                    result = fn(*args, **kwargs)
+                    result = fn(*args, **kwargs)  # type: ignore
                 else:
                     with self.start_recording_session(
                         task_name=local_task_name,
                         checkpoint_id=recorder_checkpoint_id,
                     ):
-                        result = fn(*args, **kwargs)
+                        result = fn(*args, **kwargs)  # type: ignore
 
-                self._record_variable(
+                self.record_output(
                     task_name=local_task_name,
-                    recorder_checkpoint_id=recorder_checkpoint_id,
-                    variable_name="fn_return_val",
+                    checkpoint_id=recorder_checkpoint_id,
                     value=result,
-                    is_output=True,
                 )
                 return result
 
@@ -534,7 +462,7 @@ class Evaluator:
 
     def record_human_feedback(
         self,
-        feedback: ResponseFeedback,
+        feedback: OutputFeedback,
         details: Optional[str] = None,
         task_name: Optional[str] = None,
         checkpoint_id: Optional[str] = None,
@@ -549,6 +477,7 @@ class Evaluator:
         num_checkpoints_per_input_hash: int = 2,
         task_objective: Optional[str] = None,
         output_comparator: Optional[OutputComparator] = None,
+        output_scorer: Optional[OutputScorer] = None,
     ) -> None:
         if task_name is None:
             task_names = self.recorder.get_task_names()
@@ -590,6 +519,29 @@ class Evaluator:
                 print(
                     f"\n\nComparing {len(checkpoint_ids)} checkpoints of {input_hash}"
                 )
+                if output_scorer is not None:
+                    for checkpoint_id in checkpoint_ids:
+                        checkpoint_to_score = self.recorder.get_checkpoint(
+                            task_name=task_name,
+                            checkpoint_id=checkpoint_id,
+                        )
+                        if checkpoint_to_score is None:
+                            continue
+                        if checkpoint_to_score.output_score is not None:
+                            continue
+
+                        score = output_scorer(
+                            task_objective or "",
+                            checkpoint_to_score.get_input_variables(),
+                            checkpoint_to_score.output,
+                        )
+                        self.recorder.record_output_score(
+                            task_name=task_name,
+                            checkpoint_id=checkpoint_id,
+                            score=score,
+                        )
+                        print(f"Scoring {checkpoint_id}: {score}")
+
                 to_compare = [
                     (checkpoint_ids[i], checkpoint_ids[i + 1])
                     for i in range(len(checkpoint_ids) - 1)
@@ -612,103 +564,115 @@ class Evaluator:
                         )
                         continue
 
-                    for var_name in checkpoint_a.output_variable_names:
-                        if var_name not in checkpoint_b.output_variable_names:
-                            print(
-                                f"Variable {var_name} not found in checkpoint {checkpoint_id_b}"
-                            )
-                            continue
-                        val_a = checkpoint_a.variables[var_name]
-                        val_b = checkpoint_b.variables[var_name]
+                    output_a = checkpoint_a.output
+                    output_b = checkpoint_b.output
 
-                        comparator_result = output_comparator(
+                    should_record_comparison = True
+                    if comparator_result := self.recorder.get_comparison_result(
+                        task_name=task_name,
+                        checkpoint_id_a=checkpoint_id_a,
+                        checkpoint_id_b=checkpoint_id_b,
+                    ):
+                        print(f"Using cached comparison result for {input_hash}")
+                        should_record_comparison = False
+                        output_comparison_feedback = comparator_result.output_feedback
+                    else:
+                        output_comparison_feedback = output_comparator(
                             task_objective or "",
                             checkpoint_a.get_input_variables(),
-                            val_a,
-                            val_b,
+                            output_a,
+                            output_b,
                         )
 
-                        a_unique_params = []
-                        b_unqiue_params = []
-                        for key in (
-                            checkpoint_a.eval_params.keys()
-                            | checkpoint_b.eval_params.keys()
-                        ):
-                            param_val_a = checkpoint_a.eval_params.get(key)
-                            param_val_b = checkpoint_b.eval_params.get(key)
-                            if param_val_a != param_val_b:
-                                if param_val_a is not None:
-                                    a_unique_params.append(f"{key}={param_val_a}")
-                                elif param_val_b is not None:
-                                    b_unqiue_params.append(f"{key}={param_val_b}")
+                    a_unique_params = []
+                    b_unqiue_params = []
+                    for key in (
+                        checkpoint_a.eval_params.keys()
+                        | checkpoint_b.eval_params.keys()
+                    ):
+                        param_val_a = checkpoint_a.eval_params.get(key)
+                        param_val_b = checkpoint_b.eval_params.get(key)
+                        if param_val_a != param_val_b:
+                            if param_val_a is not None:
+                                a_unique_params.append(f"{key}={param_val_a}")
+                            elif param_val_b is not None:
+                                b_unqiue_params.append(f"{key}={param_val_b}")
 
-                        a_unique_params_str = (
-                            ("(" + ", ".join(a_unique_params) + ")")
-                            if len(a_unique_params) > 0
-                            else ""
-                        )
-                        b_unique_params_str = (
-                            ("(" + ", ".join(b_unqiue_params) + ")")
-                            if len(b_unqiue_params) > 0
-                            else ""
-                        )
+                    a_unique_params_str = (
+                        ("(" + ", ".join(a_unique_params) + ")")
+                        if len(a_unique_params) > 0
+                        else ""
+                    )
+                    b_unique_params_str = (
+                        ("(" + ", ".join(b_unqiue_params) + ")")
+                        if len(b_unqiue_params) > 0
+                        else ""
+                    )
 
-                        a_params_str = ",".join(
-                            f"{k}={v}" for k, v in checkpoint_a.eval_params.items()
-                        )
-                        b_params_str = ",".join(
-                            f"{k}={v}" for k, v in checkpoint_b.eval_params.items()
-                        )
+                    a_params_str = ",".join(
+                        f"{k}={v}" for k, v in checkpoint_a.eval_params.items()
+                    )
+                    b_params_str = ",".join(
+                        f"{k}={v}" for k, v in checkpoint_b.eval_params.items()
+                    )
 
-                        rerun_id_a = (
-                            checkpoint_a.rerun_metadata.get("id")
-                            if checkpoint_a.rerun_metadata is not None
-                            else None
-                        )
-                        rerun_id_b = (
-                            checkpoint_b.rerun_metadata.get("id")
-                            if checkpoint_b.rerun_metadata is not None
-                            else None
-                        )
+                    rerun_id_a = (
+                        checkpoint_a.rerun_metadata.get("id")
+                        if checkpoint_a.rerun_metadata is not None
+                        else None
+                    )
+                    rerun_id_b = (
+                        checkpoint_b.rerun_metadata.get("id")
+                        if checkpoint_b.rerun_metadata is not None
+                        else None
+                    )
 
-                        num_comparisons += 1
+                    num_comparisons += 1
 
-                        if comparator_result == 0:
-                            print(
-                                f"{ORANGE}[neutral] `{var_name}` is the same between checkpoints {checkpoint_id_a} {a_unique_params_str} & {checkpoint_id_b} {b_unique_params_str} {END_CLR}"
-                            )
-                            params_to_succesful_examples[a_params_str] += 1
-                            params_to_succesful_examples[b_params_str] += 1
-                            if rerun_id_a is not None:
-                                rerun_to_succesful_examples[rerun_id_a] += 1
-                            if rerun_id_b is not None:
-                                rerun_to_succesful_examples[rerun_id_b] += 1
-                        elif comparator_result < 0:
-                            print(
-                                f"{RED}[regression] `{var_name}` was better in checkpoint {checkpoint_id_a} {a_unique_params_str} than {checkpoint_id_b} {b_unique_params_str} {END_CLR}"
-                            )
-                            params_to_succesful_examples[a_params_str] += 1
-                            if rerun_id_a is not None:
-                                rerun_to_succesful_examples[rerun_id_a] += 1
-                        else:
-                            print(
-                                f"{GREEN}[improvement] `{var_name}` improved from checkpoint {checkpoint_id_a} {a_unique_params_str} to {checkpoint_id_b} {b_unique_params_str}{END_CLR}"
-                            )
-                            params_to_succesful_examples[b_params_str] += 1
-                            if rerun_id_b is not None:
-                                rerun_to_succesful_examples[rerun_id_b] += 1
+                    if output_comparison_feedback.result == FeedbackResult.NEUTRAL:
+                        print(
+                            f"{ORANGE}[neutral] task output is the same between checkpoints {checkpoint_id_a} {a_unique_params_str} & {checkpoint_id_b} {b_unique_params_str} {END_CLR}"
+                        )
+                        params_to_succesful_examples[a_params_str] += 1
+                        params_to_succesful_examples[b_params_str] += 1
+                        if rerun_id_a is not None:
+                            rerun_to_succesful_examples[rerun_id_a] += 1
+                        if rerun_id_b is not None:
+                            rerun_to_succesful_examples[rerun_id_b] += 1
+                    elif output_comparison_feedback.result == FeedbackResult.NEGATIVE:
+                        print(
+                            f"{RED}[regression] task output was better in checkpoint {checkpoint_id_a} {a_unique_params_str} than {checkpoint_id_b} {b_unique_params_str} {END_CLR}"
+                        )
+                        params_to_succesful_examples[a_params_str] += 1
+                        if rerun_id_a is not None:
+                            rerun_to_succesful_examples[rerun_id_a] += 1
+                    else:
+                        print(
+                            f"{GREEN}[improvement] task output improved from checkpoint {checkpoint_id_a} {a_unique_params_str} to {checkpoint_id_b} {b_unique_params_str}{END_CLR}"
+                        )
+                        params_to_succesful_examples[b_params_str] += 1
+                        if rerun_id_b is not None:
+                            rerun_to_succesful_examples[rerun_id_b] += 1
+                    if should_record_comparison:
+                        self.recorder.record_comparison_result(
+                            task_name=task_name,
+                            input_hash=input_hash,
+                            result=ComparisonResult(
+                                checkpoint_id_a=checkpoint_id_a,
+                                checkpoint_id_b=checkpoint_id_b,
+                                output_feedback=output_comparison_feedback,
+                            ),
+                        )
 
             print("\nSummary:")
             print("---------")
             print("Your most sucessful re-runs:")
-            for checkpoint, num_successes in sorted(
+            for rerun_id, num_successes in sorted(
                 rerun_to_succesful_examples.items(),
                 key=lambda x: x[1],
                 reverse=True,
             ):
-                print(
-                    f"{checkpoint}: {num_successes}/{len(input_hashes_list)} successes"
-                )
+                print(f"{rerun_id}: {num_successes}/{len(input_hashes_list)} successes")
 
             print("\nYour most sucessful params:")
             for params, num_successes in sorted(

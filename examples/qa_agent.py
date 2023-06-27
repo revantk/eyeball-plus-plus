@@ -27,6 +27,7 @@ class QAAgent:
         model = eyeball_pp.get_eval_param("model") or "gpt-3.5-turbo"
         temperature = eyeball_pp.get_eval_param("temperature") or 0.5
 
+        return "brown"
         output = openai.ChatCompletion.create(  # type: ignore
             model=model,
             temperature=temperature,

@@ -2,41 +2,38 @@ import hashlib
 import json
 import os
 import pickle
-from enum import Enum
 from typing import Any, Optional, Protocol
 from dataclasses import dataclass
 import dataclasses
 
+from .classes import OutputFeedback
 
-class ResponseFeedback(Enum):
-    POSITIVE = "positive"
-    NEGATIVE = "negative"
-    NEUTRAL = "neutral"
+
+@dataclass
+class ComparisonResult:
+    checkpoint_id_a: str
+    checkpoint_id_b: str
+    output_feedback: OutputFeedback
 
 
 @dataclass
 class Checkpoint:
     checkpoint_id: str
-    variables: dict[str, str]
-    output_variable_names: set[str]
+    input_variables: dict[str, str]
+    output: str
     eval_params: dict[str, Any]
-    feedback: Optional[ResponseFeedback] = None
-    feedback_details: Optional[str] = None
-    rerun_metadata: Optional[dict[str, Any]] = None
+    output_feedback: Optional[OutputFeedback] = None
+    output_score: Optional[float] = None
+    rerun_metadata: dict[str, str] = dataclasses.field(default_factory=dict)
 
     def get_input_variables(self) -> dict[str, str]:
-        return {
-            var_name: var_val
-            for var_name, var_val in self.variables.items()
-            if var_name not in self.output_variable_names
-        }
+        return dict(self.input_variables)
 
     def get_input_hash(self) -> str:
         sorted_input_vars = sorted(
             [
                 (str(var_name), str(var_val))
-                for var_name, var_val in self.variables.items()
-                if var_name not in self.output_variable_names
+                for var_name, var_val in self.input_variables.items()
             ],
             key=lambda x: x[0],
         )
@@ -46,19 +43,26 @@ class Checkpoint:
     def __str__(self) -> str:
         msg = f"Example: {self.get_input_hash()} @ {self.checkpoint_id}\n"
         msg += "Input Variables:\n"
-        for var_name, var_val in self.get_input_variables().items():
+        for var_name, var_val in self.input_variables.items():
             msg += f"{var_name}={var_val}\n"
         return msg
 
 
 class EvalRecorder(Protocol):
-    def record(
+    def record_input_variable(
         self,
         task_name: str,
         checkpoint_id: str,
         variable_name: str,
         value: str,
-        is_output: bool,
+    ) -> None:
+        ...
+
+    def record_output(
+        self,
+        task_name: str,
+        checkpoint_id: str,
+        output: str,
     ) -> None:
         ...
 
@@ -71,12 +75,11 @@ class EvalRecorder(Protocol):
     ) -> None:
         ...
 
-    def set_response_feedback(
+    def record_output_feedback(
         self,
         task_name: str,
         checkpoint_id: str,
-        feedback: ResponseFeedback,
-        details: Optional[str] = None,
+        feedback: OutputFeedback,
     ) -> None:
         ...
 
@@ -96,20 +99,54 @@ class EvalRecorder(Protocol):
     def get_task_names(self) -> list[str]:
         ...
 
+    def record_comparison_result(
+        self,
+        task_name: str,
+        input_hash: str,
+        result: ComparisonResult,
+    ) -> None:
+        ...
+
+    def record_output_score(
+        self,
+        task_name: str,
+        checkpoint_id: str,
+        score: float,
+    ) -> None:
+        ...
+
+    def get_comparison_result(
+        self,
+        task_name: str,
+        checkpoint_id_a: str,
+        checkpoint_id_b: str,
+    ) -> Optional[ComparisonResult]:
+        ...
+
+    def get_comparison_results_for_input_hash(
+        self,
+        task_name: str,
+        input_hash: str,
+    ) -> list[ComparisonResult]:
+        ...
+
 
 @dataclass
 class Task:
     name: str
     checkpoints: dict[str, Checkpoint] = dataclasses.field(default_factory=dict)
     input_hashes: dict[str, set[str]] = dataclasses.field(default_factory=dict)
+    comparison_results: dict[str, ComparisonResult] = dataclasses.field(
+        default_factory=dict
+    )
+    input_hash_to_comparison_results: dict[str, set[str]] = dataclasses.field(
+        default_factory=dict
+    )
 
 
 class MemoryRecorder(EvalRecorder):
     def __init__(self) -> None:
         self.tasks: dict[str, Task] = {}
-
-    def _example_key(self, example_id: str, checkpoint_id: str) -> str:
-        return f"{example_id}:{checkpoint_id}"
 
     def _fetch_or_create_checkpoint(
         self, task_name: str, checkpoint_id: str
@@ -123,8 +160,8 @@ class MemoryRecorder(EvalRecorder):
         if checkpoint_id not in task.checkpoints:
             checkpoint = Checkpoint(
                 checkpoint_id=checkpoint_id,
-                variables={},
-                output_variable_names=set(),
+                input_variables={},
+                output="",
                 eval_params={},
             )
             task.checkpoints[checkpoint_id] = checkpoint
@@ -153,22 +190,24 @@ class MemoryRecorder(EvalRecorder):
             task.input_hashes[input_hash] = set()
         task.input_hashes[input_hash].add(checkpoint_id)
 
-    def record(
+    def record_input_variable(
         self,
         task_name: str,
         checkpoint_id: str,
         variable_name: str,
         value: str,
-        is_output: bool,
     ) -> None:
         checkpoint = self._fetch_or_create_checkpoint(
             task_name=task_name, checkpoint_id=checkpoint_id
         )
-        checkpoint.variables[variable_name] = value
-        if is_output:
-            checkpoint.output_variable_names.add(variable_name)
-        else:
-            self._save_input_hash(task_name, checkpoint)
+        checkpoint.input_variables[variable_name] = value
+        self._save_input_hash(task_name, checkpoint)
+
+    def record_output(self, task_name: str, checkpoint_id: str, output: str) -> None:
+        checkpoint = self._fetch_or_create_checkpoint(
+            task_name=task_name, checkpoint_id=checkpoint_id
+        )
+        checkpoint.output = output
 
     def get_latest_checkpoints(
         self, task_name: str, input_hash: str, num_checkpoints: int = 2
@@ -222,22 +261,67 @@ class MemoryRecorder(EvalRecorder):
         if rerun_metadata is not None:
             checkpoint.rerun_metadata = rerun_metadata
 
-    def set_response_feedback(
+    def record_output_feedback(
         self,
         task_name: str,
         checkpoint_id: str,
-        feedback: ResponseFeedback,
-        details: str | None = None,
+        feedback: OutputFeedback,
     ) -> None:
-        example = self._fetch_or_create_checkpoint(
+        checkpoint = self._fetch_or_create_checkpoint(
             task_name=task_name, checkpoint_id=checkpoint_id
         )
-        example.feedback = feedback
-        if details is not None:
-            example.feedback_details = details
+        checkpoint.output_feedback = feedback
 
     def get_task_names(self) -> list[str]:
         return list(self.tasks.keys())
+
+    def record_comparison_result(
+        self,
+        task_name: str,
+        input_hash: str,
+        result: ComparisonResult,
+    ) -> None:
+        task = self.tasks[task_name]
+        key = f"{result.checkpoint_id_a},{result.checkpoint_id_b}"
+        task.comparison_results[key] = result
+
+        if input_hash not in task.input_hash_to_comparison_results:
+            task.input_hash_to_comparison_results[input_hash] = set()
+        task.input_hash_to_comparison_results[input_hash].add(key)
+
+    def record_output_score(
+        self,
+        task_name: str,
+        checkpoint_id: str,
+        score: float,
+    ) -> None:
+        checkpoint = self._fetch_or_create_checkpoint(
+            task_name=task_name, checkpoint_id=checkpoint_id
+        )
+        checkpoint.output_score = score
+
+    def get_comparison_result(
+        self,
+        task_name: str,
+        checkpoint_id_a: str,
+        checkpoint_id_b: str,
+    ) -> Optional[ComparisonResult]:
+        task = self.tasks[task_name]
+        key = f"{checkpoint_id_a},{checkpoint_id_b}"
+        if key not in task.comparison_results:
+            return None
+        return task.comparison_results[key]
+
+    def get_comparison_results_for_input_hash(
+        self,
+        task_name: str,
+        input_hash: str,
+    ) -> list[ComparisonResult]:
+        task = self.tasks[task_name]
+        if input_hash not in task.input_hash_to_comparison_results:
+            return []
+        comparison_results = task.input_hash_to_comparison_results[input_hash]
+        return [task.comparison_results[key] for key in comparison_results]
 
 
 class DiskRecorder(EvalRecorder):
@@ -249,20 +333,18 @@ class DiskRecorder(EvalRecorder):
         else:
             self.memory_recorder = MemoryRecorder()
 
-    def record(
+    def record_input_variable(
         self,
         task_name: str,
         checkpoint_id: str,
         variable_name: str,
         value: str,
-        is_output: bool,
     ) -> None:
-        self.memory_recorder.record(
+        self.memory_recorder.record_input_variable(
             task_name=task_name,
             checkpoint_id=checkpoint_id,
             variable_name=variable_name,
             value=value,
-            is_output=is_output,
         )
         pickle.dump(self.memory_recorder, open(self.file_name, "wb"))
 
@@ -281,18 +363,16 @@ class DiskRecorder(EvalRecorder):
         )
         pickle.dump(self.memory_recorder, open(self.file_name, "wb"))
 
-    def set_response_feedback(
+    def record_output_feedback(
         self,
         task_name: str,
         checkpoint_id: str,
-        feedback: ResponseFeedback,
-        details: str | None = None,
+        feedback: OutputFeedback,
     ) -> None:
-        self.memory_recorder.set_response_feedback(
+        self.memory_recorder.record_output_feedback(
             task_name=task_name,
             checkpoint_id=checkpoint_id,
             feedback=feedback,
-            details=details,
         )
         pickle.dump(self.memory_recorder, open(self.file_name, "wb"))
 
@@ -315,3 +395,59 @@ class DiskRecorder(EvalRecorder):
 
     def get_task_names(self) -> list[str]:
         return self.memory_recorder.get_task_names()
+
+    def record_comparison_result(
+        self,
+        task_name: str,
+        input_hash: str,
+        result: ComparisonResult,
+    ) -> None:
+        self.memory_recorder.record_comparison_result(
+            task_name=task_name, input_hash=input_hash, result=result
+        )
+        pickle.dump(self.memory_recorder, open(self.file_name, "wb"))
+
+    def record_output_score(
+        self,
+        task_name: str,
+        checkpoint_id: str,
+        score: float,
+    ) -> None:
+        self.memory_recorder.record_output_score(
+            task_name=task_name, checkpoint_id=checkpoint_id, score=score
+        )
+        pickle.dump(self.memory_recorder, open(self.file_name, "wb"))
+
+    def get_comparison_result(
+        self,
+        task_name: str,
+        checkpoint_id_a: str,
+        checkpoint_id_b: str,
+    ) -> Optional[ComparisonResult]:
+        return self.memory_recorder.get_comparison_result(
+            task_name=task_name,
+            checkpoint_id_a=checkpoint_id_a,
+            checkpoint_id_b=checkpoint_id_b,
+        )
+
+    def get_comparison_results_for_input_hash(
+        self,
+        task_name: str,
+        input_hash: str,
+    ) -> list[ComparisonResult]:
+        return self.memory_recorder.get_comparison_results_for_input_hash(
+            task_name=task_name, input_hash=input_hash
+        )
+
+    def record_output(
+        self,
+        task_name: str,
+        checkpoint_id: str,
+        output: str,
+    ) -> None:
+        self.memory_recorder.record_output(
+            task_name=task_name,
+            checkpoint_id=checkpoint_id,
+            output=output,
+        )
+        pickle.dump(self.memory_recorder, open(self.file_name, "wb"))

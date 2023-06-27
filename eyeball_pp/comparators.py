@@ -1,15 +1,10 @@
+from .classes import FeedbackResult, OutputFeedback
 import openai
-from typing import Callable
-
-# Similar to the standard comparator if both are the same return 0, if a is better than b return -1, otherwise return 1
-# First input is the objective name, second is the value for a, third is the value for b
-# Where a is the older checkpoint and b is the newer checkpoint for this example
-OutputComparator = Callable[[str, dict[str, str], str, str], int]
 
 
 def model_graded_comparator(
     objective: str, inputs: dict[str, str], output_a: str, output_b: str
-) -> int:
+) -> OutputFeedback:
     input_str = "\n".join([f"{key}: {val}" for key, val in inputs.items()])
 
     system_msg = f"""
@@ -46,8 +41,8 @@ Same -- if both are equally good
     )["choices"][0]["message"]["content"]
     response_last_line = response.split("\n")[-1].lower()
     if "yes" in response_last_line:
-        return -1
+        return OutputFeedback(FeedbackResult.NEGATIVE, response)
     elif "no" in response_last_line:
-        return 1
+        return OutputFeedback(FeedbackResult.POSITIVE, response)
     else:
-        return 0
+        return OutputFeedback(FeedbackResult.NEUTRAL, response)

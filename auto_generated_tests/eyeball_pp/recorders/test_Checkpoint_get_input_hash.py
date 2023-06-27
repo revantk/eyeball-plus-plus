@@ -10,14 +10,14 @@ def test_get_input_hash_with_same_input_variables():
     """
     checkpoint1 = Checkpoint(
         checkpoint_id="1",
-        variables={"a": "1", "b": "2", "c": "3"},
-        output_variable_names={"c"},
+        input_variables={"a": "1", "b": "2", "c": "3"},
+        output={"c"},
         eval_params={},
     )
     checkpoint2 = Checkpoint(
         checkpoint_id="2",
-        variables={"a": "1", "b": "2", "c": "3"},
-        output_variable_names={"c"},
+        input_variables={"a": "1", "b": "2", "c": "3"},
+        output={"c"},
         eval_params={},
     )
     assert checkpoint1.get_input_hash() == checkpoint2.get_input_hash()
@@ -31,14 +31,14 @@ def test_get_input_hash_with_different_input_variables():
     """
     checkpoint1 = Checkpoint(
         checkpoint_id="1",
-        variables={"a": "1", "b": "2", "c": "3"},
-        output_variable_names={"c"},
+        input_variables={"a": "1", "b": "2", "c": "3"},
+        output={"c"},
         eval_params={},
     )
     checkpoint2 = Checkpoint(
         checkpoint_id="2",
-        variables={"a": "1", "b": "3", "c": "3"},
-        output_variable_names={"c"},
+        input_variables={"a": "1", "b": "3", "c": "3"},
+        output={"c"},
         eval_params={},
     )
     assert checkpoint1.get_input_hash() != checkpoint2.get_input_hash()
@@ -52,14 +52,14 @@ def test_get_input_hash_with_different_output_variables():
     """
     checkpoint1 = Checkpoint(
         checkpoint_id="1",
-        variables={"a": "1", "b": "2", "c": "3", "d": "4"},
-        output_variable_names={"c"},
+        input_variables={"a": "1", "b": "2", "c": "3", "d": "4"},
+        output={"c"},
         eval_params={},
     )
     checkpoint2 = Checkpoint(
         checkpoint_id="2",
-        variables={"a": "1", "b": "2", "c": "4", "d": "4"},
-        output_variable_names={"c"},
+        input_variables={"a": "1", "b": "2", "c": "4", "d": "4"},
+        output={"c"},
         eval_params={},
     )
     assert checkpoint1.get_input_hash() == checkpoint2.get_input_hash()
