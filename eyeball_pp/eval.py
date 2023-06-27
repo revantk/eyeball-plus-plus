@@ -3,9 +3,22 @@ from contextlib import contextmanager
 from enum import Enum
 import inspect
 import json
-from .recorders import ComparisonResult, DiskRecorder, MemoryRecorder, EvalRecorder
-from .comparators import model_graded_comparator
-from .classes import FeedbackResult, OutputComparator, OutputScorer, OutputFeedback
+from .recorders import (
+    Checkpoint,
+    ComparisonResult,
+    DiskRecorder,
+    MemoryRecorder,
+    EvalRecorder,
+    get_input_hash,
+)
+from .comparators import model_graded_comparator, comparator_from_scores
+from .classes import (
+    FeedbackResult,
+    OutputComparator,
+    OutputScore,
+    OutputScorer,
+    OutputFeedback,
+)
 
 import random
 import threading
@@ -376,7 +389,9 @@ class Evaluator:
                 "id": datetime.datetime.utcnow().isoformat(),
             }
 
-            for input_hash in input_hashes:
+            print(f"Will rerun {len(input_hashes)} inputs for task:`{task_name}`")
+
+            for idx, input_hash in enumerate(input_hashes):
                 recorder_checkpoint_id = datetime.datetime.utcnow().isoformat()
                 last_checkpoind_id = self._get_last_checkpoint_id(
                     task_name=task_name,
@@ -394,11 +409,13 @@ class Evaluator:
                 if checkpoint_to_rerun is None:
                     continue
 
-                print(f"\n\nRerunning {checkpoint_to_rerun}")
                 input_vars = {
                     k: json.loads(v)
                     for k, v in checkpoint_to_rerun.get_input_variables().items()
                 }
+                print(
+                    f"\nRerunning input #{idx}:\n{checkpoint_to_rerun.get_input_var_str()}"
+                )
 
                 if len(eval_params_list) > 0:
                     for eval_params in eval_params_list:
@@ -416,7 +433,6 @@ class Evaluator:
                             print(f"Using eval params: {eval_params}")
                             yield input_vars
                 else:
-                    print("Using default eval params")
                     with self.start_recording_session(
                         task_name=task_name,
                         checkpoint_id=recorder_checkpoint_id,
@@ -470,14 +486,36 @@ class Evaluator:
         task_name, checkpoint_id = self._get_recorder_state(task_name, checkpoint_id)
         pass
 
+    def delete_checkpoints_for_input_vars(
+        self,
+        input_vars: dict[str, str],
+        task_name: Optional[str] = None,
+    ) -> None:
+        if task_name is None:
+            task_names = self.recorder.get_task_names()
+            if len(task_names) == 0:
+                raise ValueError("No task names found")
+            elif len(task_names) == 1:
+                task_name = task_names[0]
+            else:
+                raise ValueError(
+                    f"Must provide a task_name as you have multiple tasks recorded -- Found: {task_names}"
+                )
+        input_hash = get_input_hash(
+            {k: self._serialize(v) for k, v in input_vars.items()}
+        )
+        self.recorder.delete_checkpoints_for_input_hash(task_name, input_hash)
+
     def compare_recorded_checkpoints(
         self,
         task_name: Optional[str] = None,
         num_input_hashes: int = 5,
-        num_checkpoints_per_input_hash: int = 2,
+        num_checkpoints_per_input_hash: int = 3,
         task_objective: Optional[str] = None,
         output_comparator: Optional[OutputComparator] = None,
         output_scorer: Optional[OutputScorer] = None,
+        use_cached_scores: bool = True,
+        use_cached_comparisons: bool = True,
     ) -> None:
         if task_name is None:
             task_names = self.recorder.get_task_names()
@@ -490,7 +528,7 @@ class Evaluator:
                     f"Must provide a task_name as you have multiple tasks recorded -- Found: {task_names}"
                 )
 
-        if output_comparator is None:
+        if output_comparator is None and output_scorer is None:
             output_comparator = model_graded_comparator
             assert (
                 task_objective is not None
@@ -500,6 +538,8 @@ class Evaluator:
         random.shuffle(input_hashes_list)
         input_hashes_list = input_hashes_list[:num_input_hashes]
 
+        print(f"Comparing {len(input_hashes_list)} inputs for task:`{task_name}`")
+
         try:
             self.mode = EvaluatorMode.COMPARE_CHECKPOINTS
 
@@ -507,29 +547,49 @@ class Evaluator:
             rerun_to_succesful_examples: dict[str, int] = defaultdict(int)
 
             num_comparisons = 0
-            for input_hash in input_hashes_list:
+            for idx, input_hash in enumerate(input_hashes_list):
                 checkpoint_ids = self.recorder.get_latest_checkpoints(
                     task_name,
                     input_hash,
                     num_checkpoints=num_checkpoints_per_input_hash,
                 )
-                if len(checkpoint_ids) < 2:
+
+                checkpoints: dict[str, Checkpoint] = {}
+                filtered_checkpoint_ids = []
+                for checkpoind_id in checkpoint_ids:
+                    checkpoint = self.recorder.get_checkpoint(
+                        task_name=task_name,
+                        checkpoint_id=checkpoind_id,
+                    )
+                    if (
+                        checkpoint is not None
+                        and checkpoint.output is not None
+                        and checkpoint.output != "null"
+                        and checkpoint.output != "None"
+                    ):
+                        filtered_checkpoint_ids.append(checkpoind_id)
+                        checkpoints[checkpoind_id] = checkpoint
+                checkpoint_ids = filtered_checkpoint_ids
+
+                if len(checkpoint_ids) == 0:
                     continue
 
-                print(
-                    f"\n\nComparing {len(checkpoint_ids)} checkpoints of {input_hash}"
-                )
+                scores: dict[str, OutputScore] = {}
                 if output_scorer is not None:
+                    print(f"\nInput #{idx} - Scoring {len(checkpoint_ids)} checkpoints")
                     for checkpoint_id in checkpoint_ids:
-                        checkpoint_to_score = self.recorder.get_checkpoint(
-                            task_name=task_name,
-                            checkpoint_id=checkpoint_id,
-                        )
-                        if checkpoint_to_score is None:
-                            continue
-                        if checkpoint_to_score.output_score is not None:
+                        checkpoint_to_score = checkpoints[checkpoint_id]
+                        if (
+                            use_cached_scores
+                            and checkpoint_to_score.output_score is not None
+                        ):
+                            print(
+                                f"Using cached score for {checkpoint_id}: {checkpoint_to_score.output_score}"
+                            )
+                            scores[checkpoint_id] = checkpoint_to_score.output_score
                             continue
 
+                        assert checkpoint_to_score.output is not None
                         score = output_scorer(
                             task_objective or "",
                             checkpoint_to_score.get_input_variables(),
@@ -540,15 +600,20 @@ class Evaluator:
                             checkpoint_id=checkpoint_id,
                             score=score,
                         )
-                        print(f"Scoring {checkpoint_id}: {score}")
+                        scores[checkpoint_id] = score
+                        print(f"Scored {checkpoint_id}: {score}")
+
+                if len(checkpoint_ids) < 2:
+                    continue
 
                 to_compare = [
                     (checkpoint_ids[i], checkpoint_ids[i + 1])
                     for i in range(len(checkpoint_ids) - 1)
                 ]
 
+                print(f"\nInput #{idx} - Running {len(to_compare)} comparison(s)")
+
                 for checkpoint_id_a, checkpoint_id_b in to_compare:
-                    print()
                     checkpoint_a = self.recorder.get_checkpoint(
                         task_name=task_name,
                         checkpoint_id=checkpoint_id_a,
@@ -560,28 +625,41 @@ class Evaluator:
 
                     if checkpoint_a is None or checkpoint_b is None:
                         print(
-                            f"Could not find example {input_hash} for checkpoint {checkpoint_id_a} or {checkpoint_id_b}"
+                            f"Could not find checkpoint {checkpoint_id_a} or {checkpoint_id_b}"
                         )
                         continue
 
                     output_a = checkpoint_a.output
                     output_b = checkpoint_b.output
 
+                    assert output_a is not None
+                    assert output_b is not None
+
                     should_record_comparison = True
-                    if comparator_result := self.recorder.get_comparison_result(
-                        task_name=task_name,
-                        checkpoint_id_a=checkpoint_id_a,
-                        checkpoint_id_b=checkpoint_id_b,
+                    if use_cached_comparisons and (
+                        comparator_result := self.recorder.get_comparison_result(
+                            task_name=task_name,
+                            checkpoint_id_a=checkpoint_id_a,
+                            checkpoint_id_b=checkpoint_id_b,
+                        )
                     ):
                         print(f"Using cached comparison result for {input_hash}")
                         should_record_comparison = False
                         output_comparison_feedback = comparator_result.output_feedback
-                    else:
+                    elif output_comparator is not None:
                         output_comparison_feedback = output_comparator(
                             task_objective or "",
                             checkpoint_a.get_input_variables(),
                             output_a,
                             output_b,
+                        )
+                    elif output_scorer is not None:
+                        output_comparison_feedback = comparator_from_scores(
+                            scores[checkpoint_id_a], scores[checkpoint_id_b]
+                        )
+                    else:
+                        raise ValueError(
+                            "Should not happen. We need an output comparator or output scorer"
                         )
 
                     a_unique_params = []
@@ -666,18 +744,23 @@ class Evaluator:
 
             print("\nSummary:")
             print("---------")
-            print("Your most sucessful re-runs:")
-            for rerun_id, num_successes in sorted(
-                rerun_to_succesful_examples.items(),
-                key=lambda x: x[1],
-                reverse=True,
-            ):
-                print(f"{rerun_id}: {num_successes}/{len(input_hashes_list)} successes")
+            if len(rerun_to_succesful_examples) > 0:
+                print("Your most sucessful re-runs:")
+                for rerun_id, num_successes in sorted(
+                    rerun_to_succesful_examples.items(),
+                    key=lambda x: x[1],
+                    reverse=True,
+                ):
+                    print(
+                        f"{rerun_id}: {num_successes}/{len(input_hashes_list)} successes"
+                    )
 
             print("\nYour most sucessful params:")
             for params, num_successes in sorted(
                 params_to_succesful_examples.items(), key=lambda x: x[1], reverse=True
             ):
+                if params == "":
+                    params = "default"
                 print(f"{params}: {num_successes}/{num_comparisons} successes")
 
         finally:
@@ -696,3 +779,4 @@ get_eval_params = _default_evaluator.get_eval_params
 rerun_recorded_examples = _default_evaluator.rerun_recorded_examples
 rate_recorded_examples = _default_evaluator.rate_recorded_examples
 compare_recorded_checkpoints = _default_evaluator.compare_recorded_checkpoints
+delete_checkpoints_for_input_vars = _default_evaluator.delete_checkpoints_for_input_vars

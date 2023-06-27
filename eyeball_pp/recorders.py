@@ -6,7 +6,7 @@ from typing import Any, Optional, Protocol
 from dataclasses import dataclass
 import dataclasses
 
-from .classes import OutputFeedback
+from .classes import OutputFeedback, OutputScore
 
 
 @dataclass
@@ -16,20 +16,35 @@ class ComparisonResult:
     output_feedback: OutputFeedback
 
 
+def get_input_hash(input_variables: dict[str, str]) -> str:
+    sorted_input_vars = sorted(
+        [
+            (str(var_name), str(var_val))
+            for var_name, var_val in input_variables.items()
+        ],
+        key=lambda x: x[0],
+    )
+    input_var_str = json.dumps(sorted_input_vars)
+    return hashlib.sha256(input_var_str.encode("utf-8")).hexdigest()
+
+
 @dataclass
 class Checkpoint:
     checkpoint_id: str
-    input_variables: dict[str, str]
-    output: str
-    eval_params: dict[str, Any]
+    input_variables: dict[str, str] = dataclasses.field(default_factory=dict)
+    eval_params: dict[str, Any] = dataclasses.field(default_factory=dict)
+    output: Optional[str] = None
     output_feedback: Optional[OutputFeedback] = None
-    output_score: Optional[float] = None
+    output_score: Optional[OutputScore] = None
     rerun_metadata: dict[str, str] = dataclasses.field(default_factory=dict)
 
     def get_input_variables(self) -> dict[str, str]:
         return dict(self.input_variables)
 
     def get_input_hash(self) -> str:
+        return get_input_hash(self.input_variables)
+
+    def get_input_var_str(self) -> str:
         sorted_input_vars = sorted(
             [
                 (str(var_name), str(var_val))
@@ -37,14 +52,14 @@ class Checkpoint:
             ],
             key=lambda x: x[0],
         )
-        input_var_str = json.dumps(sorted_input_vars)
-        return hashlib.sha256(input_var_str.encode("utf-8")).hexdigest()
+        msg = ""
+        for var_name, var_val in sorted_input_vars:
+            msg += f"{var_name}={var_val}"
+        return msg
 
     def __str__(self) -> str:
-        msg = f"Example: {self.get_input_hash()} @ {self.checkpoint_id}\n"
-        msg += "Input Variables:\n"
-        for var_name, var_val in self.input_variables.items():
-            msg += f"{var_name}={var_val}\n"
+        msg = f"Checkpoint: {self.checkpoint_id}\n"
+        msg += self.get_input_var_str()
         return msg
 
 
@@ -111,7 +126,7 @@ class EvalRecorder(Protocol):
         self,
         task_name: str,
         checkpoint_id: str,
-        score: float,
+        score: OutputScore,
     ) -> None:
         ...
 
@@ -128,6 +143,13 @@ class EvalRecorder(Protocol):
         task_name: str,
         input_hash: str,
     ) -> list[ComparisonResult]:
+        ...
+
+    def delete_checkpoints_for_input_hash(
+        self,
+        task_name: str,
+        input_hash: str,
+    ) -> None:
         ...
 
 
@@ -161,7 +183,6 @@ class MemoryRecorder(EvalRecorder):
             checkpoint = Checkpoint(
                 checkpoint_id=checkpoint_id,
                 input_variables={},
-                output="",
                 eval_params={},
             )
             task.checkpoints[checkpoint_id] = checkpoint
@@ -293,7 +314,7 @@ class MemoryRecorder(EvalRecorder):
         self,
         task_name: str,
         checkpoint_id: str,
-        score: float,
+        score: OutputScore,
     ) -> None:
         checkpoint = self._fetch_or_create_checkpoint(
             task_name=task_name, checkpoint_id=checkpoint_id
@@ -322,6 +343,20 @@ class MemoryRecorder(EvalRecorder):
             return []
         comparison_results = task.input_hash_to_comparison_results[input_hash]
         return [task.comparison_results[key] for key in comparison_results]
+
+    def delete_checkpoints_for_input_hash(
+        self,
+        task_name: str,
+        input_hash: str,
+    ) -> None:
+        task = self.tasks[task_name]
+        print(input_hash)
+        print(task.input_hashes.keys())
+        if input_hash not in task.input_hashes:
+            return
+        for checkpoint_id in task.input_hashes[input_hash]:
+            del task.checkpoints[checkpoint_id]
+        del task.input_hashes[input_hash]
 
 
 class DiskRecorder(EvalRecorder):
@@ -411,7 +446,7 @@ class DiskRecorder(EvalRecorder):
         self,
         task_name: str,
         checkpoint_id: str,
-        score: float,
+        score: OutputScore,
     ) -> None:
         self.memory_recorder.record_output_score(
             task_name=task_name, checkpoint_id=checkpoint_id, score=score
@@ -449,5 +484,15 @@ class DiskRecorder(EvalRecorder):
             task_name=task_name,
             checkpoint_id=checkpoint_id,
             output=output,
+        )
+        pickle.dump(self.memory_recorder, open(self.file_name, "wb"))
+
+    def delete_checkpoints_for_input_hash(
+        self,
+        task_name: str,
+        input_hash: str,
+    ) -> None:
+        self.memory_recorder.delete_checkpoints_for_input_hash(
+            task_name=task_name, input_hash=input_hash
         )
         pickle.dump(self.memory_recorder, open(self.file_name, "wb"))

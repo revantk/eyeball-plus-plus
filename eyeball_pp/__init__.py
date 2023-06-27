@@ -7,7 +7,16 @@ from .eval import (
     get_eval_param,
     rate_recorded_examples,
     compare_recorded_checkpoints,
+    delete_checkpoints_for_input_vars,
     Evaluator,
+)
+
+from .classes import (
+    FeedbackResult,
+    OutputFeedback,
+    OutputComparator,
+    OutputScorer,
+    OutputScore,
 )
 
 __all__ = [
@@ -19,5 +28,11 @@ __all__ = [
     "rerun_recorded_examples",
     "rate_recorded_examples",
     "compare_recorded_checkpoints",
+    "delete_checkpoints_for_input_vars",
     "Evaluator",
+    "FeedbackResult",
+    "OutputFeedback",
+    "OutputComparator",
+    "OutputScorer",
+    "OutputScore",
 ]

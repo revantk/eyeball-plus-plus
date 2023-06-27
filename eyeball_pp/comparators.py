@@ -1,5 +1,25 @@
-from .classes import FeedbackResult, OutputFeedback
+from .classes import FeedbackResult, OutputFeedback, OutputScore
 import openai
+
+
+def comparator_from_scores(
+    score_a: OutputScore, score_b: OutputScore
+) -> OutputFeedback:
+    if score_a == score_b:
+        return OutputFeedback(
+            FeedbackResult.NEUTRAL,
+            f"Score {score_a} is equal to {score_b}",
+        )
+    elif score_a > score_b:
+        return OutputFeedback(
+            FeedbackResult.NEGATIVE,
+            f"Score {score_b} is worse than {score_b}",
+        )
+    else:
+        return OutputFeedback(
+            FeedbackResult.POSITIVE,
+            f"Score {score_b} is better than {score_a}",
+        )
 
 
 def model_graded_comparator(
