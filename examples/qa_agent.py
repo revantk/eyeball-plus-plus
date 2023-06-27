@@ -60,5 +60,5 @@ if __name__ == "__main__":
 
     eyeball_pp.compare_recorded_checkpoints(
         task_objective="This agent tries to answer questions given a context. Verify that the agent answers the question correctly and that the answer is only based on the context.",
-        num_checkpoints_per_input_hash=2,
+        num_checkpoints_per_input_hash=4,
     )
