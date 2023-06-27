@@ -236,7 +236,7 @@ class MemoryRecorder(EvalRecorder):
 class DiskRecorder(EvalRecorder):
     # TODO: improve this by using rocksdb etc. vs a stupid pickle file
     def __init__(self, dir_path: str) -> None:
-        self.file_name = os.path.join(dir_path, "evaluator.pkl")
+        self.file_name = os.path.join(dir_path, "eyeball_checkpoints.pkl")
         if os.path.exists(self.file_name):
             self.memory_recorder = pickle.load(open(self.file_name, "rb"))
         else:
@@ -263,10 +263,14 @@ class DiskRecorder(EvalRecorder):
         self,
         task_name: str,
         checkpoint_id: str,
-        params: dict[str, Any],
+        eval_params: dict[str, Any],
+        rerun_metadata: Optional[dict[str, Any]] = None,
     ) -> None:
         self.memory_recorder.set_eval_params(
-            task_name=task_name, checkpoint_id=checkpoint_id, params=params
+            task_name=task_name,
+            checkpoint_id=checkpoint_id,
+            eval_params=eval_params,
+            rerun_metadata=rerun_metadata,
         )
         pickle.dump(self.memory_recorder, open(self.file_name, "wb"))
 

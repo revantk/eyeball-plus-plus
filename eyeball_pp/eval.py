@@ -81,8 +81,8 @@ class Evaluator:
     def __init__(self, **config_kwargs) -> None:
         self.config = EvaluatorConfig._merge(EvaluatorConfig(), **config_kwargs)
         self.mode: EvaluatorMode = EvaluatorMode.RECORD
-        # self.recorder: EvalRecorder = DiskRecorder(self.config.dir_path)
-        self.recorder: EvalRecorder = MemoryRecorder()
+        self.recorder: EvalRecorder = DiskRecorder(self.config.dir_path)
+        # self.recorder: EvalRecorder = MemoryRecorder()
         self.current_recorder_state = threading.local()
 
     def _get_config(self, **override_config_kwargs) -> EvaluatorConfig:
