@@ -28,7 +28,6 @@ class QAAgent:
         model = eyeball_pp.get_eval_param("model") or "gpt-3.5-turbo"
         temperature = eyeball_pp.get_eval_param("temperature") or 0.5
 
-        return "brown"
         output = openai.ChatCompletion.create(  # type: ignore
             model=model,
             temperature=temperature,
@@ -61,4 +60,5 @@ if __name__ == "__main__":
 
     eyeball_pp.compare_recorded_checkpoints(
         task_objective="This agent tries to answer questions given a context. Verify that the agent answers the question correctly and that the answer is only based on the context.",
+        num_checkpoints_per_input_hash=2,
     )

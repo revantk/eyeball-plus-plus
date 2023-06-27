@@ -545,8 +545,8 @@ class Evaluator:
     def compare_recorded_checkpoints(
         self,
         task_name: Optional[str] = None,
-        num_examples_to_compare: int = 5,
-        num_checkpoints_to_eval: int = 2,
+        num_input_hashes: int = 5,
+        num_checkpoints_per_input_hash: int = 2,
         task_objective: Optional[str] = None,
         output_comparator: Optional[OutputComparator] = None,
     ) -> None:
@@ -569,7 +569,7 @@ class Evaluator:
 
         input_hashes_list = self.recorder.get_input_hashes(task_name)
         random.shuffle(input_hashes_list)
-        input_hashes_list = input_hashes_list[:num_examples_to_compare]
+        input_hashes_list = input_hashes_list[:num_input_hashes]
 
         try:
             self.mode = EvaluatorMode.COMPARE_CHECKPOINTS
@@ -577,9 +577,12 @@ class Evaluator:
             params_to_succesful_examples: dict[str, int] = defaultdict(int)
             rerun_to_succesful_examples: dict[str, int] = defaultdict(int)
 
+            num_comparisons = 0
             for input_hash in input_hashes_list:
                 checkpoint_ids = self.recorder.get_latest_checkpoints(
-                    task_name, input_hash, num_checkpoints=num_checkpoints_to_eval
+                    task_name,
+                    input_hash,
+                    num_checkpoints=num_checkpoints_per_input_hash,
                 )
                 if len(checkpoint_ids) < 2:
                     continue
@@ -668,6 +671,8 @@ class Evaluator:
                             else None
                         )
 
+                        num_comparisons += 1
+
                         if comparator_result == 0:
                             print(
                                 f"{ORANGE}[neutral] `{var_name}` is the same between checkpoints {checkpoint_id_a} {a_unique_params_str} & {checkpoint_id_b} {b_unique_params_str} {END_CLR}"
@@ -709,7 +714,7 @@ class Evaluator:
             for params, num_successes in sorted(
                 params_to_succesful_examples.items(), key=lambda x: x[1], reverse=True
             ):
-                print(f"{params}: {num_successes}/{len(input_hashes_list)} successes")
+                print(f"{params}: {num_successes}/{num_comparisons} successes")
 
         finally:
             self.mode = EvaluatorMode.RECORD
