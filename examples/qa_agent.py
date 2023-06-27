@@ -1,5 +1,4 @@
 import eyeball_pp
-from eyeball_pp.recorders import DiskRecorder
 import openai
 
 
