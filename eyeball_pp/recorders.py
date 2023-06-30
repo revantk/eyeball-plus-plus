@@ -54,7 +54,7 @@ class Checkpoint:
         )
         msg = ""
         for var_name, var_val in sorted_input_vars:
-            msg += f"{var_name}={var_val}"
+            msg += f"{var_name}={var_val}\n"
         return msg
 
     def __str__(self) -> str:

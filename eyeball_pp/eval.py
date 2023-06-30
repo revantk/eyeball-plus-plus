@@ -36,6 +36,9 @@ from functools import wraps
 from dataclasses import dataclass
 import dataclasses
 import datetime
+from .utils import get_user_input
+from .classes import FeedbackResult
+
 
 GREEN = "\x1b[32m"
 ORANGE = "\x1b[33m"
@@ -260,6 +263,7 @@ class Evaluator:
         task_name: Optional[str] = None,
         checkpoint_id_arg_name: Optional[str] = None,
         eval_params: Optional[dict[str, Any]] = None,
+        request_user_feedback_probability: float = 0.0,
         **config_kwargs,
     ) -> Callable[..., Callable]:
         def _decorator(fn: Callable[..., T]) -> Callable[..., T]:
@@ -357,11 +361,51 @@ class Evaluator:
                     checkpoint_id=recorder_checkpoint_id,
                     value=result,
                 )
+                if request_user_feedback_probability > 0:
+                    if random.random() < request_user_feedback_probability:
+                        print("Requesting user feedback")
+                        self.request_user_feedback(
+                            output=str(result),
+                            task_name=local_task_name,
+                            checkpoint_id=recorder_checkpoint_id,
+                        )
                 return result
 
             return _wrapper
 
         return _decorator
+
+    def request_user_feedback(
+        self,
+        output: str,
+        task_name: Optional[str] = None,
+        checkpoint_id: Optional[str] = None,
+    ) -> Optional[OutputFeedback]:
+        task_name, checkpoint_id = self._get_recorder_state(task_name, checkpoint_id)
+        checkpoint = self.recorder.get_checkpoint(
+            task_name=task_name, checkpoint_id=checkpoint_id
+        )
+        if checkpoint is None:
+            return None
+
+        feedback_result = FeedbackResult[
+            get_user_input(
+                f"What do you think of the result?\n{output}\n",
+                choices=[f.name for f in FeedbackResult],
+            )
+        ]
+        details = get_user_input(
+            "Any details about your feedback (optional)\n", choices=None
+        )
+
+        output_feedback = OutputFeedback(result=feedback_result, message=details)
+
+        self.recorder.record_output_feedback(
+            task_name=task_name,
+            checkpoint_id=checkpoint_id,
+            feedback=output_feedback
+        )
+        return output_feedback
 
     def rerun_recorded_examples(
         self,
@@ -470,9 +514,48 @@ class Evaluator:
 
         try:
             self.mode = EvaluatorMode.RATE_EXAMPLES
-            for example_id in input_hashes_lst:
-                # TODO: implement this
-                pass
+            for input_hash in input_hashes_lst:
+                already_seen_outputs_to_feedback: dict[str: OutputFeedback] = {}
+                checkpoint_ids = self.recorder.get_latest_checkpoints(
+                    task_name, input_hash, num_checkpoints=4
+                )
+                raw_checkpoints = [
+                    self.recorder.get_checkpoint(task_name, c) for c in checkpoint_ids
+                ]
+                checkpoints: list[Checkpoint] = [
+                    c for c in raw_checkpoints if c is not None
+                ]
+                if len(checkpoints) == 0:
+                    continue
+                
+                print(f"For the inputs:\n{checkpoints[0].get_input_var_str()}")
+                for checkpoint in checkpoints:
+                    if checkpoint.output_feedback is None:
+                        if feedback := already_seen_outputs_to_feedback.get(checkpoint.output):
+                            self.recorder.record_output_feedback(
+                                task_name=task_name,
+                                checkpoint_id=checkpoint.checkpoint_id,
+                                feedback=feedback,
+                            )
+                        else:
+                            feedback = self.request_user_feedback(
+                                checkpoint.output or "",
+                                task_name=task_name,
+                                checkpoint_id=checkpoint.checkpoint_id,
+                            )
+                            if feedback is not None:
+                                already_seen_outputs_to_feedback[checkpoint.output] = feedback
+                    elif new_feedback:= already_seen_outputs_to_feedback.get(checkpoint.output):
+                        if new_feedback.result != checkpoint.output_feedback.result:
+                            print(f"For output: {checkpoint.output}\nOld feedback {checkpoint.output_feedback} is different from new feedback {new_feedback}")
+                            print(f"Updating feedback to {new_feedback}")
+                            self.recorder.record_output_feedback(
+                                task_name=task_name,
+                                checkpoint_id=checkpoint.checkpoint_id,
+                                feedback=new_feedback,
+                            )
+                    else:
+                        print(f"Already has feedback: {checkpoint.output_feedback}")
         finally:
             self.mode = EvaluatorMode.RECORD
 

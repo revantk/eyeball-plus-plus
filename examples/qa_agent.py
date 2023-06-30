@@ -7,7 +7,9 @@ class QAAgent:
         # Agent initialization code
         ...
 
-    @eyeball_pp.record_task(args_to_record=["context", "question"])
+    @eyeball_pp.record_task(
+        args_to_record=["context", "question"], request_user_feedback_probability=0.5
+    )
     def ask(self, context: str, question: str) -> str:
         # You can write arbitrary code here, the only thing the eval framework
         # cares about is the input and output of this function.
@@ -42,23 +44,25 @@ class QAAgent:
 
 
 if __name__ == "__main__":
-    agent = QAAgent()
-    agent.ask(
-        context="The quick brown fox jumps over the lazy dog",
-        question="What color is the fox?",
-    )
+    eyeball_pp.rate_recorded_examples()
 
-    agent.ask(
-        context="The lazy dog which is not brown jumps over the quick brown fox",
-        question="What color is the dog?",
-    )
+    # agent = QAAgent()
+    # agent.ask(
+    #     context="The quick brown fox jumps over the lazy dog",
+    #     question="What color is the fox?",
+    # )
 
-    for input_vars in eyeball_pp.rerun_recorded_examples(
-        {"model": "gpt-4", "temperature": 0.7}
-    ):
-        agent.ask(input_vars["context"], input_vars["question"])
+    # agent.ask(
+    #     context="The lazy dog which is not brown jumps over the quick brown fox",
+    #     question="What color is the dog?",
+    # )
 
-    eyeball_pp.compare_recorded_checkpoints(
-        task_objective="This agent tries to answer questions given a context. Verify that the agent answers the question correctly and that the answer is only based on the context.",
-        num_checkpoints_per_input_hash=4,
-    )
+    # for input_vars in eyeball_pp.rerun_recorded_examples(
+    #     {"model": "gpt-4", "temperature": 0.7}
+    # ):
+    #     agent.ask(input_vars["context"], input_vars["question"])
+
+    # eyeball_pp.compare_recorded_checkpoints(
+    #     task_objective="This agent tries to answer questions given a context. Verify that the agent answers the question correctly and that the answer is only based on the context.",
+    #     num_checkpoints_per_input_hash=4,
+    # )
