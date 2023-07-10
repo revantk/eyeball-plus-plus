@@ -1,5 +1,6 @@
 import hashlib
 import json
+import yaml
 import os
 import pickle
 from typing import Any, Optional, Protocol
@@ -81,7 +82,7 @@ class EvalRecorder(Protocol):
     ) -> None:
         ...
 
-    def set_eval_params(
+    def record_eval_params(
         self,
         task_name: str,
         checkpoint_id: str,
@@ -95,6 +96,14 @@ class EvalRecorder(Protocol):
         task_name: str,
         checkpoint_id: str,
         feedback: OutputFeedback,
+    ) -> None:
+        ...
+
+    def record_output_score(
+        self,
+        task_name: str,
+        checkpoint_id: str,
+        score: OutputScore,
     ) -> None:
         ...
 
@@ -119,14 +128,6 @@ class EvalRecorder(Protocol):
         task_name: str,
         input_hash: str,
         result: ComparisonResult,
-    ) -> None:
-        ...
-
-    def record_output_score(
-        self,
-        task_name: str,
-        checkpoint_id: str,
-        score: OutputScore,
     ) -> None:
         ...
 
@@ -268,7 +269,7 @@ class MemoryRecorder(EvalRecorder):
 
         return list(task.input_hashes.keys())
 
-    def set_eval_params(
+    def record_eval_params(
         self,
         task_name: str,
         checkpoint_id: str,
@@ -359,6 +360,227 @@ class MemoryRecorder(EvalRecorder):
         del task.input_hashes[input_hash]
 
 
+class FileRecorder(EvalRecorder):
+    def __init__(self, dir_path: str) -> None:
+        self.dir_path = dir_path
+        if not os.path.exists(self.dir_path):
+            os.makedirs(self.dir_path)
+
+    def _record_yaml(
+        self,
+        task_name: str,
+        checkpoint_id: str,
+        prefixes: list[str],
+        name: str,
+        value: Any,
+    ) -> dict[str, Any]:
+        dir_name = os.path.join(self.dir_path, task_name, "checkpoints")
+        if not os.path.exists(dir_name):
+            os.makedirs(dir_name)
+        file_name = os.path.join(dir_name, f"{checkpoint_id}.yaml")
+        if os.path.exists(file_name):
+            yaml_dict = yaml.load(open(file_name, "r"), Loader=yaml.FullLoader)
+        else:
+            yaml_dict = {}
+
+        current_dict = yaml_dict
+        for prefix in prefixes:
+            if prefix not in current_dict:
+                current_dict[prefix] = {}
+            current_dict = current_dict[prefix]
+        current_dict[name] = value
+        yaml.dump(yaml_dict, open(file_name, "w+"))
+        return yaml_dict
+
+    def record_input_variable(
+        self, task_name: str, checkpoint_id: str, variable_name: str, value: str
+    ) -> None:
+        self._record_yaml(
+            task_name=task_name,
+            checkpoint_id=checkpoint_id,
+            prefixes=["input_variables"],
+            name=variable_name,
+            value=value,
+        )
+
+    def record_output(
+        self,
+        task_name: str,
+        checkpoint_id: str,
+        output: str,
+    ) -> None:
+        yaml_dict = self._record_yaml(
+            task_name=task_name,
+            checkpoint_id=checkpoint_id,
+            prefixes=[],
+            name="output",
+            value=output,
+        )
+        input_hash = get_input_hash(yaml_dict["input_variables"])
+        inputs_dir_name = os.path.join(self.dir_path, task_name, "inputs")
+        if not os.path.exists(inputs_dir_name):
+            os.makedirs(inputs_dir_name)
+
+        input_file_name = os.path.join(
+            self.dir_path, task_name, "inputs", f"{input_hash}.yaml"
+        )
+        yaml.dump(yaml_dict["input_variables"], open(input_file_name, "w+"))
+        self._record_yaml(
+            task_name=task_name,
+            checkpoint_id=checkpoint_id,
+            prefixes=[],
+            name="input_hash",
+            value=input_hash,
+        )
+
+    def record_eval_params(
+        self,
+        task_name: str,
+        checkpoint_id: str,
+        eval_params: dict[str, Any],
+        rerun_metadata: Optional[dict[str, Any]] = None,
+    ) -> None:
+        self._record_yaml(
+            task_name=task_name,
+            checkpoint_id=checkpoint_id,
+            prefixes=[],
+            name="eval_params",
+            value=eval_params,
+        )
+        if rerun_metadata is not None:
+            self._record_yaml(
+                task_name=task_name,
+                checkpoint_id=checkpoint_id,
+                prefixes=[],
+                name="rerun_metadata",
+                value=rerun_metadata,
+            )
+
+    def record_output_feedback(
+        self,
+        task_name: str,
+        checkpoint_id: str,
+        feedback: OutputFeedback,
+    ) -> None:
+        self._record_yaml(
+            task_name=task_name,
+            checkpoint_id=checkpoint_id,
+            prefixes=[],
+            name="output_feedback",
+            value=feedback.as_dict(),
+        )
+
+    def record_output_score(
+        self,
+        task_name: str,
+        checkpoint_id: str,
+        score: OutputScore,
+    ) -> None:
+        self._record_yaml(
+            task_name=task_name,
+            checkpoint_id=checkpoint_id,
+            prefixes=[],
+            name="output_score",
+            value=score.as_dict(),
+        )
+
+    def get_checkpoint(
+        self, task_name: str, checkpoint_id: str
+    ) -> Optional[Checkpoint]:
+        file_name = os.path.join(
+            self.dir_path, task_name, "checkpoints", f"{checkpoint_id}.yaml"
+        )
+        if not os.path.exists(file_name):
+            return None
+        yaml_dict = yaml.load(open(file_name, "r"), Loader=yaml.FullLoader)
+        checkpoint = Checkpoint(checkpoint_id=checkpoint_id)
+        checkpoint.input_variables = yaml_dict.get("input_variables", {})
+        checkpoint.eval_params = yaml_dict.get("eval_params", {})
+        checkpoint.output = yaml_dict.get("output")
+        checkpoint.output_feedback = (
+            OutputFeedback.from_dict(yaml_dict.get("output_feedback"))
+            if "output_feedback" in yaml_dict
+            else None
+        )
+        checkpoint.output_score = (
+            OutputScore.from_dict(yaml_dict.get("output_score"))
+            if "output_score" in yaml_dict
+            else None
+        )
+        checkpoint.rerun_metadata = yaml_dict.get("rerun_metadata")
+        return checkpoint
+
+    def _read_checkpoints(self, task_name: str) -> dict[str, list[str]]:
+        input_hashes_to_checkpoints: dict[str, list[str]] = {}
+        dir_name = os.path.join(self.dir_path, task_name, "checkpoints")
+        for file_name in os.listdir(dir_name):
+            if file_name.endswith(".yaml"):
+                checkpoint_id = file_name[:-5]
+                yaml_dict = yaml.load(open(file_name, "r"), Loader=yaml.FullLoader)
+                print(yaml_dict)
+                if input_hash := yaml_dict.get("input_hash"):
+                    if input_hash not in input_hashes_to_checkpoints:
+                        input_hashes_to_checkpoints[input_hash] = []
+                    input_hashes_to_checkpoints[input_hash].append(checkpoint_id)
+
+        for input_hash in input_hashes_to_checkpoints:
+            input_hashes_to_checkpoints[input_hash].sort(reverse=True)
+        return input_hashes_to_checkpoints
+
+    def get_latest_checkpoints(
+        self, task_name: str, input_hash: str, num_checkpoints: int = 2
+    ) -> list[str]:
+        input_hashes_to_checkpoints = self._read_checkpoints(task_name)
+        if input_hash not in input_hashes_to_checkpoints:
+            return []
+        return input_hashes_to_checkpoints[input_hash][:num_checkpoints]
+
+    def get_input_hashes(self, task_name: str) -> list[str]:
+        input_hashes = []
+        for file_name in os.listdir(os.path.join(self.dir_path, task_name, "inputs")):
+            if file_name.endswith(".yaml"):
+                input_hashes.append(file_name[:-5])
+        return input_hashes
+
+    def get_task_names(self) -> list[str]:
+        task_names = []
+        for dir_name in os.listdir(self.dir_path):
+            if os.path.isdir(os.path.join(self.dir_path, dir_name)):
+                task_names.append(dir_name)
+        return task_names
+
+    def record_comparison_result(
+        self,
+        task_name: str,
+        input_hash: str,
+        result: ComparisonResult,
+    ) -> None:
+        # TODO: record as a md file
+        ...
+
+    def get_comparison_result(
+        self,
+        task_name: str,
+        checkpoint_id_a: str,
+        checkpoint_id_b: str,
+    ) -> Optional[ComparisonResult]:
+        ...
+
+    def get_comparison_results_for_input_hash(
+        self,
+        task_name: str,
+        input_hash: str,
+    ) -> list[ComparisonResult]:
+        ...
+
+    def delete_checkpoints_for_input_hash(
+        self,
+        task_name: str,
+        input_hash: str,
+    ) -> None:
+        ...
+
+
 class DiskRecorder(EvalRecorder):
     # TODO: improve this by using rocksdb etc. vs a stupid pickle file
     def __init__(self, dir_path: str) -> None:
@@ -383,14 +605,14 @@ class DiskRecorder(EvalRecorder):
         )
         pickle.dump(self.memory_recorder, open(self.file_name, "wb"))
 
-    def set_eval_params(
+    def record_eval_params(
         self,
         task_name: str,
         checkpoint_id: str,
         eval_params: dict[str, Any],
         rerun_metadata: Optional[dict[str, Any]] = None,
     ) -> None:
-        self.memory_recorder.set_eval_params(
+        self.memory_recorder.record_eval_params(
             task_name=task_name,
             checkpoint_id=checkpoint_id,
             eval_params=eval_params,

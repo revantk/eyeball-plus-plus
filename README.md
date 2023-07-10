@@ -15,7 +15,7 @@ eyeball_pp is a python library which can be installed via pip
 `pip install eyeball_pp`
 
 # Concepts 
-The eyeball_pp has 3 simple concepts -- record, rerun and compare.
+eyeball_pp has 3 simple concepts -- record, rerun and compare.
 
 ## Record
 eyeball_pp consists of a recorder which records the inputs and outputs of your task runs as you are running it and saves them as checkpoints. You can record this locally while developing or from a production system. You can optionally record human feedback for the task output too.
@@ -24,7 +24,7 @@ You can record your task using the `record_task` decorator. This will record eve
 ```python
 import eyeball_pp
 
-@eyeball_pp.record_task
+@eyeball_pp.record_task(args_to_record=['input_a', 'input_b'])
 def your_task_function(input_a, input_b):
   # Your task can run arbitrary code
   ...
@@ -41,7 +41,7 @@ with eyeball_pp.start_recording_session(task_name="your_task", checkpoint_id="so
   eyeball_pp.record_input('input_a', input_a_value)
   eyeball_pp.record_input('input_b', input_b_value)
   ...
-  eyeball_pp.record_output('output', output)
+  eyeball_pp.record_output(output)
 ```
 
 OR without the context manager.. 
@@ -65,7 +65,7 @@ You can also re-run the examples with a set of parameters you want to evaluate (
 ```python
 from eyeball_pp import get_eval_param, rerun_recorded_examples 
 
-for vars in rerun_recorded_examples({'model': 'gpt-4', 'temperature': 0.7}, {'model': 'claude-v1'}):
+for vars in rerun_recorded_examples({'model': 'gpt-4', 'temperature': 0.7}, {'model': 'mpt-30b-chat'}):
   your_task_function(vars['input_a'], vars['input_b'])
 
 # You can access these eval params from anywhere in your code
@@ -77,7 +77,7 @@ def your_task_function(input_a, input_b):
 ```
 
 ## Compare
-eyeball_pp lets you run comparisons across various checkpoints and tells you how your changes are performing. If the output of your task can be evaluated objectively then you can supply a custom comparator and if not you can just use the built in model graded eval. This will use a llm to figure out if your task output is solving the objective you want it to. And if you've been recording human feedback for your task runs, it will use this feedback to fine-tune the evaluator llm.
+eyeball_pp lets you run comparisons across various checkpoints and tells you how your changes are performing. If the output of your task can be evaluated objectively then you can supply a custom comparator and if not you can just use the built in model graded eval. This will use a model to figure out if your task output is solving the objective you want it to. And if you've been recording human feedback for your task runs, it will use this feedback to fine-tune the evaluator llm.
 
 ```python
 # The example below uses the built in model graded eval
@@ -99,6 +99,8 @@ Summary:
 The param combination (model=gpt-4, temperature=0.7) works better for 2/2 examples than the default params
 The param combination (model=claude-v1, temperature=None) works equally as good as the (model=gpt-4, temperature=0.7) combination for 2/2 examples
 ```
+
+The comparison will also output a .md file in your repo with the comparison results in a tabular format.
 
 # Configuration 
 

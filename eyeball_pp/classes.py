@@ -14,6 +14,15 @@ class OutputFeedback:
     result: FeedbackResult
     message: str
 
+    def as_dict(self):
+        return {"result": self.result.name, "message": self.message}
+
+    @staticmethod
+    def from_dict(data):
+        return OutputFeedback(
+            result=FeedbackResult[data["result"]], message=data["message"]
+        )
+
 
 @dataclass
 class OutputScore:
@@ -31,6 +40,13 @@ class OutputScore:
 
     def __str__(self) -> str:
         return f"{self.score:.2f} ({self.message})"
+
+    def as_dict(self):
+        return {"score": self.score, "message": self.message}
+
+    @staticmethod
+    def from_dict(data):
+        return OutputScore(score=data["score"], message=data["message"])
 
 
 # Compare the output of two checkpoints for a given objective

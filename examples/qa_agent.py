@@ -44,13 +44,13 @@ class QAAgent:
 
 
 if __name__ == "__main__":
-    eyeball_pp.rate_recorded_examples()
+    # eyeball_pp.rate_recorded_examples()
 
-    # agent = QAAgent()
-    # agent.ask(
-    #     context="The quick brown fox jumps over the lazy dog",
-    #     question="What color is the fox?",
-    # )
+    agent = QAAgent()
+    agent.ask(
+        context="The quick brown fox jumps over the lazy dog",
+        question="What color is the fox?",
+    )
 
     # agent.ask(
     #     context="The lazy dog which is not brown jumps over the quick brown fox",

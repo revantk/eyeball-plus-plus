@@ -7,6 +7,7 @@ from .recorders import (
     Checkpoint,
     ComparisonResult,
     DiskRecorder,
+    FileRecorder,
     MemoryRecorder,
     EvalRecorder,
     get_input_hash,
@@ -67,7 +68,7 @@ T = TypeVar("T", int, float, str, bool, bytes, dict, list, None, JsonSerializabl
 @dataclass
 class EvaluatorConfig:
     sample_rate: float = 1.0
-    dir_path: str = "."
+    dir_path: str = "./eyeball_pp_data"
 
     @staticmethod
     def _merge(original_config: "EvaluatorConfig", **kwargs) -> "EvaluatorConfig":
@@ -97,7 +98,7 @@ class Evaluator:
     def __init__(self, **config_kwargs) -> None:
         self.config = EvaluatorConfig._merge(EvaluatorConfig(), **config_kwargs)
         self.mode: EvaluatorMode = EvaluatorMode.RECORD
-        self.recorder: EvalRecorder = DiskRecorder(self.config.dir_path)
+        self.recorder: EvalRecorder = FileRecorder(self.config.dir_path)
         # self.recorder: EvalRecorder = MemoryRecorder()
         self.current_recorder_state = threading.local()
 
@@ -317,13 +318,13 @@ class Evaluator:
                     )
                     # TODO: maybe we should not override with default params in this mode. Can lead to some confusion
                     if (params is None or len(params) == 0) and eval_params is not None:
-                        self.recorder.set_eval_params(
+                        self.recorder.record_eval_params(
                             task_name=local_task_name,
                             checkpoint_id=recorder_checkpoint_id,
                             eval_params=eval_params,
                         )
                 elif eval_params is not None:
-                    self.recorder.set_eval_params(
+                    self.recorder.record_eval_params(
                         task_name=local_task_name,
                         checkpoint_id=recorder_checkpoint_id,
                         eval_params=eval_params,
@@ -380,6 +381,7 @@ class Evaluator:
         output: str,
         task_name: Optional[str] = None,
         checkpoint_id: Optional[str] = None,
+        print_inputs: bool = False,
     ) -> Optional[OutputFeedback]:
         task_name, checkpoint_id = self._get_recorder_state(task_name, checkpoint_id)
         checkpoint = self.recorder.get_checkpoint(
@@ -387,6 +389,9 @@ class Evaluator:
         )
         if checkpoint is None:
             return None
+
+        if print_inputs:
+            print(checkpoint.get_input_var_str())
 
         feedback_result = FeedbackResult[
             get_user_input(
@@ -401,9 +406,7 @@ class Evaluator:
         output_feedback = OutputFeedback(result=feedback_result, message=details)
 
         self.recorder.record_output_feedback(
-            task_name=task_name,
-            checkpoint_id=checkpoint_id,
-            feedback=output_feedback
+            task_name=task_name, checkpoint_id=checkpoint_id, feedback=output_feedback
         )
         return output_feedback
 
@@ -468,7 +471,7 @@ class Evaluator:
                             checkpoint_id=recorder_checkpoint_id,
                             checkpoint_id_to_rerun=last_checkpoind_id,
                         ):
-                            self.recorder.set_eval_params(
+                            self.recorder.record_eval_params(
                                 task_name=task_name,
                                 checkpoint_id=recorder_checkpoint_id,
                                 eval_params=eval_params,
@@ -481,7 +484,7 @@ class Evaluator:
                         task_name=task_name,
                         checkpoint_id=recorder_checkpoint_id,
                     ):
-                        self.recorder.set_eval_params(
+                        self.recorder.record_eval_params(
                             task_name=task_name,
                             checkpoint_id=recorder_checkpoint_id,
                             eval_params={},
@@ -515,7 +518,7 @@ class Evaluator:
         try:
             self.mode = EvaluatorMode.RATE_EXAMPLES
             for input_hash in input_hashes_lst:
-                already_seen_outputs_to_feedback: dict[str: OutputFeedback] = {}
+                already_seen_outputs_to_feedback: dict[str:OutputFeedback] = {}
                 checkpoint_ids = self.recorder.get_latest_checkpoints(
                     task_name, input_hash, num_checkpoints=4
                 )
@@ -527,11 +530,13 @@ class Evaluator:
                 ]
                 if len(checkpoints) == 0:
                     continue
-                
+
                 print(f"For the inputs:\n{checkpoints[0].get_input_var_str()}")
                 for checkpoint in checkpoints:
                     if checkpoint.output_feedback is None:
-                        if feedback := already_seen_outputs_to_feedback.get(checkpoint.output):
+                        if feedback := already_seen_outputs_to_feedback.get(
+                            checkpoint.output
+                        ):
                             self.recorder.record_output_feedback(
                                 task_name=task_name,
                                 checkpoint_id=checkpoint.checkpoint_id,
@@ -544,10 +549,16 @@ class Evaluator:
                                 checkpoint_id=checkpoint.checkpoint_id,
                             )
                             if feedback is not None:
-                                already_seen_outputs_to_feedback[checkpoint.output] = feedback
-                    elif new_feedback:= already_seen_outputs_to_feedback.get(checkpoint.output):
+                                already_seen_outputs_to_feedback[
+                                    checkpoint.output
+                                ] = feedback
+                    elif new_feedback := already_seen_outputs_to_feedback.get(
+                        checkpoint.output
+                    ):
                         if new_feedback.result != checkpoint.output_feedback.result:
-                            print(f"For output: {checkpoint.output}\nOld feedback {checkpoint.output_feedback} is different from new feedback {new_feedback}")
+                            print(
+                                f"For output: {checkpoint.output}\nOld feedback {checkpoint.output_feedback} is different from new feedback {new_feedback}"
+                            )
                             print(f"Updating feedback to {new_feedback}")
                             self.recorder.record_output_feedback(
                                 task_name=task_name,
