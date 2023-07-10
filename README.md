@@ -1,4 +1,6 @@
-# Eyeball++
+# Eyeball++ 
+_Ridiculously simple evaluation for LLM agents_
+
 eyeball_pp is a framework to evaluate and benchmark tasks which use llms.
 
 This framework helps you answer questions like: "Which llm is the best for my specific task?" or "This prompt change looks good on the example I just tested, does it work with all the other things I've tested?"
