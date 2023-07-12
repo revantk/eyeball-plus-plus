@@ -12,8 +12,8 @@ from .classes import OutputFeedback, OutputScore
 
 @dataclass
 class ComparisonResult:
-    checkpoint_id_a: str
-    checkpoint_id_b: str
+    older_checkpoint_id: str
+    newer_checkpoint_id: str
     output_feedback: OutputFeedback
 
 
@@ -134,8 +134,8 @@ class EvalRecorder(Protocol):
     def get_comparison_result(
         self,
         task_name: str,
-        checkpoint_id_a: str,
-        checkpoint_id_b: str,
+        older_checkpoint_id: str,
+        newer_checkpoint_id: str,
     ) -> Optional[ComparisonResult]:
         ...
 
@@ -304,7 +304,7 @@ class MemoryRecorder(EvalRecorder):
         result: ComparisonResult,
     ) -> None:
         task = self.tasks[task_name]
-        key = f"{result.checkpoint_id_a},{result.checkpoint_id_b}"
+        key = f"{result.older_checkpoint_id},{result.newer_checkpoint_id}"
         task.comparison_results[key] = result
 
         if input_hash not in task.input_hash_to_comparison_results:
@@ -325,11 +325,11 @@ class MemoryRecorder(EvalRecorder):
     def get_comparison_result(
         self,
         task_name: str,
-        checkpoint_id_a: str,
-        checkpoint_id_b: str,
+        older_checkpoint_id: str,
+        newer_checkpoint_id: str,
     ) -> Optional[ComparisonResult]:
         task = self.tasks[task_name]
-        key = f"{checkpoint_id_a},{checkpoint_id_b}"
+        key = f"{older_checkpoint_id},{newer_checkpoint_id}"
         if key not in task.comparison_results:
             return None
         return task.comparison_results[key]
@@ -568,7 +568,7 @@ class FileRecorder(EvalRecorder):
 
     def _write_latest_comparison_results(self, task_name: str) -> None:
         ...
-
+        
     def record_comparison_result(
         self,
         task_name: str,
@@ -581,8 +581,8 @@ class FileRecorder(EvalRecorder):
     def get_comparison_result(
         self,
         task_name: str,
-        checkpoint_id_a: str,
-        checkpoint_id_b: str,
+        older_checkpoint_id: str,
+        newer_checkpoint_id: str,
     ) -> Optional[ComparisonResult]:
         ...
 
@@ -590,6 +590,7 @@ class FileRecorder(EvalRecorder):
         self,
         task_name: str,
         input_hash: str,
+        num_results: int = 3,
     ) -> list[ComparisonResult]:
         ...
 
@@ -698,13 +699,13 @@ class DiskRecorder(EvalRecorder):
     def get_comparison_result(
         self,
         task_name: str,
-        checkpoint_id_a: str,
-        checkpoint_id_b: str,
+        older_checkpoint_id: str,
+        newer_checkpoint_id: str,
     ) -> Optional[ComparisonResult]:
         return self.memory_recorder.get_comparison_result(
             task_name=task_name,
-            checkpoint_id_a=checkpoint_id_a,
-            checkpoint_id_b=checkpoint_id_b,
+            older_checkpoint_id=older_checkpoint_id,
+            newer_checkpoint_id=newer_checkpoint_id,
         )
 
     def get_comparison_results_for_input_hash(

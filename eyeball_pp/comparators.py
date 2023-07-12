@@ -2,30 +2,33 @@ from .classes import FeedbackResult, OutputFeedback, OutputScore
 import openai
 
 
-def comparator_from_scores(
-    score_a: OutputScore, score_b: OutputScore
+def output_feedback_from_scores(
+    older_score: OutputScore, newer_score: OutputScore
 ) -> OutputFeedback:
-    if score_a == score_b:
+    if older_score == newer_score:
         return OutputFeedback(
             FeedbackResult.NEUTRAL,
-            f"Score {score_a} is equal to {score_b}",
+            f"Score {older_score} is equal to {newer_score}",
         )
-    elif score_a > score_b:
+    elif older_score > newer_score:
         return OutputFeedback(
             FeedbackResult.NEGATIVE,
-            f"Score {score_b} is worse than {score_b}",
+            f"Score {newer_score} is worse than {newer_score}",
         )
     else:
         return OutputFeedback(
             FeedbackResult.POSITIVE,
-            f"Score {score_b} is better than {score_a}",
+            f"Score {newer_score} is better than {older_score}",
         )
 
 
 def model_graded_comparator(
-    objective: str, inputs: dict[str, str], output_a: str, output_b: str
+    objective: str,
+    input_variables: dict[str, str],
+    older_checkpoint_output: str,
+    newer_checkpoint_output: str,
 ) -> OutputFeedback:
-    input_str = "\n".join([f"{key}: {val}" for key, val in inputs.items()])
+    input_str = "\n".join([f"{key}: {val}" for key, val in input_variables.items()])
 
     system_msg = f"""
 You are a human evaluator trying to grade the response of a function based on the following objective and inputs.
@@ -41,10 +44,10 @@ Inputs:
 Keeping the objectives and the inputs in mind, which of the following responses is better?
 
 Response A:
-{output_a}
+{older_checkpoint_output}
 
 Response B:
-{output_b}
+{newer_checkpoint_output}
 
 Give your reasoning followed by one of the following options:
 Yes -- if Response A is better than B

@@ -29,25 +29,23 @@ class QAAgent:
         model = eyeball_pp.get_eval_param("model") or "gpt-3.5-turbo"
         temperature = eyeball_pp.get_eval_param("temperature") or 0.5
 
-        return "brown"
-        # output = openai.ChatCompletion.create(  # type: ignore
-        #     model=model,
-        #     temperature=temperature,
-        #     messages=[
-        #         {"role": "system", "content": system},
-        #         {"role": "user", "content": prompt},
-        #     ],
-        # )["choices"][0]["message"][
-        #     "content"
-        # ]  # type: ignore
-        # return output
+        output = openai.ChatCompletion.create(  # type: ignore
+            model=model,
+            temperature=temperature,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ],
+        )["choices"][0]["message"][
+            "content"
+        ]  # type: ignore
+        return output
 
 
 if __name__ == "__main__":
     eyeball_pp.set_config(
         dir_path="examples",
     )
-    # eyeball_pp.rate_recorded_examples()
 
     agent = QAAgent()
     # agent.ask(
@@ -63,7 +61,6 @@ if __name__ == "__main__":
     # for input_vars in eyeball_pp.rerun_recorded_examples(
     #     {"model": "gpt-4", "temperature": 0.7}
     # ):
-    #     print(input_vars)
     #     agent.ask(input_vars["context"], input_vars["question"])
 
     eyeball_pp.compare_recorded_checkpoints(

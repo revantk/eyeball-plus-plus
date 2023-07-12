@@ -12,7 +12,7 @@ from .recorders import (
     EvalRecorder,
     get_input_hash,
 )
-from .comparators import model_graded_comparator, comparator_from_scores
+from .comparators import model_graded_comparator, output_feedback_from_scores
 from .classes import (
     FeedbackResult,
     OutputComparator,
@@ -663,7 +663,7 @@ class Evaluator:
                     ):
                         filtered_checkpoint_ids.append(checkpoind_id)
                         checkpoints[checkpoind_id] = checkpoint
-                checkpoint_ids = filtered_checkpoint_ids
+                checkpoint_ids = sorted(filtered_checkpoint_ids, reverse=True)
 
                 if len(checkpoint_ids) == 0:
                     continue
@@ -700,6 +700,8 @@ class Evaluator:
                 if len(checkpoint_ids) < 2:
                     continue
 
+                # Newer checkpoints are at the start of the list so for every comparison
+                # we compare the newer_checkpoint_id with the older_checkpoint_id
                 to_compare = [
                     (checkpoint_ids[i], checkpoint_ids[i + 1])
                     for i in range(len(checkpoint_ids) - 1)
@@ -707,34 +709,34 @@ class Evaluator:
 
                 print(f"\nInput #{idx} - Running {len(to_compare)} comparison(s)")
 
-                for checkpoint_id_a, checkpoint_id_b in to_compare:
-                    checkpoint_a = self.recorder.get_checkpoint(
+                for newer_checkpoint_id, older_checkpoint_id in to_compare:
+                    newer_checkpoint = self.recorder.get_checkpoint(
                         task_name=task_name,
-                        checkpoint_id=checkpoint_id_a,
+                        checkpoint_id=newer_checkpoint_id,
                     )
-                    checkpoint_b = self.recorder.get_checkpoint(
+                    older_checkpoint = self.recorder.get_checkpoint(
                         task_name=task_name,
-                        checkpoint_id=checkpoint_id_b,
+                        checkpoint_id=older_checkpoint_id,
                     )
 
-                    if checkpoint_a is None or checkpoint_b is None:
+                    if newer_checkpoint is None or older_checkpoint is None:
                         print(
-                            f"Could not find checkpoint {checkpoint_id_a} or {checkpoint_id_b}"
+                            f"Could not find checkpoint {newer_checkpoint_id} or {older_checkpoint_id}"
                         )
                         continue
 
-                    output_a = checkpoint_a.output
-                    output_b = checkpoint_b.output
+                    newer_checkpoint_output = newer_checkpoint.output
+                    older_checkpoint_output = older_checkpoint.output
 
-                    assert output_a is not None
-                    assert output_b is not None
+                    assert newer_checkpoint_output is not None
+                    assert older_checkpoint_output is not None
 
                     should_record_comparison = True
                     if use_cached_comparisons and (
                         comparator_result := self.recorder.get_comparison_result(
                             task_name=task_name,
-                            checkpoint_id_a=checkpoint_id_a,
-                            checkpoint_id_b=checkpoint_id_b,
+                            older_checkpoint_id=older_checkpoint_id,
+                            newer_checkpoint_id=newer_checkpoint_id,
                         )
                     ):
                         print(f"Using cached comparison result for {input_hash}")
@@ -742,60 +744,61 @@ class Evaluator:
                         output_comparison_feedback = comparator_result.output_feedback
                     elif output_comparator is not None:
                         output_comparison_feedback = output_comparator(
-                            task_objective or "",
-                            checkpoint_a.get_input_variables(),
-                            output_a,
-                            output_b,
+                            objective=task_objective or "",
+                            input_variables=newer_checkpoint.get_input_variables(),
+                            older_checkpoint_output=older_checkpoint_output,
+                            newer_checkpoint_output=newer_checkpoint_output,
                         )
                     elif output_scorer is not None:
-                        output_comparison_feedback = comparator_from_scores(
-                            scores[checkpoint_id_a], scores[checkpoint_id_b]
+                        output_comparison_feedback = output_feedback_from_scores(
+                            older_score=scores[older_checkpoint_id],
+                            newer_score=scores[newer_checkpoint_id],
                         )
                     else:
                         raise ValueError(
                             "Should not happen. We need an output comparator or output scorer"
                         )
 
-                    a_unique_params = []
-                    b_unqiue_params = []
+                    new_unique_params = []
+                    old_unqiue_params = []
                     for key in (
-                        checkpoint_a.eval_params.keys()
-                        | checkpoint_b.eval_params.keys()
+                        newer_checkpoint.eval_params.keys()
+                        | older_checkpoint.eval_params.keys()
                     ):
-                        param_val_a = checkpoint_a.eval_params.get(key)
-                        param_val_b = checkpoint_b.eval_params.get(key)
+                        param_val_a = newer_checkpoint.eval_params.get(key)
+                        param_val_b = older_checkpoint.eval_params.get(key)
                         if param_val_a != param_val_b:
                             if param_val_a is not None:
-                                a_unique_params.append(f"{key}={param_val_a}")
+                                new_unique_params.append(f"{key}={param_val_a}")
                             elif param_val_b is not None:
-                                b_unqiue_params.append(f"{key}={param_val_b}")
+                                old_unqiue_params.append(f"{key}={param_val_b}")
 
-                    a_unique_params_str = (
-                        ("(" + ", ".join(a_unique_params) + ")")
-                        if len(a_unique_params) > 0
+                    new_unique_params_str = (
+                        ("(" + ", ".join(new_unique_params) + ")")
+                        if len(new_unique_params) > 0
                         else ""
                     )
-                    b_unique_params_str = (
-                        ("(" + ", ".join(b_unqiue_params) + ")")
-                        if len(b_unqiue_params) > 0
+                    old_unique_params_str = (
+                        ("(" + ", ".join(old_unqiue_params) + ")")
+                        if len(old_unqiue_params) > 0
                         else ""
                     )
 
-                    a_params_str = ",".join(
-                        f"{k}={v}" for k, v in checkpoint_a.eval_params.items()
+                    new_params_str = ",".join(
+                        f"{k}={v}" for k, v in newer_checkpoint.eval_params.items()
                     )
-                    b_params_str = ",".join(
-                        f"{k}={v}" for k, v in checkpoint_b.eval_params.items()
+                    old_params_str = ",".join(
+                        f"{k}={v}" for k, v in older_checkpoint.eval_params.items()
                     )
 
-                    rerun_id_a = (
-                        checkpoint_a.rerun_metadata.get("id")
-                        if checkpoint_a.rerun_metadata is not None
+                    rerun_id_new = (
+                        newer_checkpoint.rerun_metadata.get("id")
+                        if newer_checkpoint.rerun_metadata is not None
                         else None
                     )
-                    rerun_id_b = (
-                        checkpoint_b.rerun_metadata.get("id")
-                        if checkpoint_b.rerun_metadata is not None
+                    rerun_id_old = (
+                        older_checkpoint.rerun_metadata.get("id")
+                        if older_checkpoint.rerun_metadata is not None
                         else None
                     )
 
@@ -803,35 +806,35 @@ class Evaluator:
 
                     if output_comparison_feedback.result == FeedbackResult.NEUTRAL:
                         print(
-                            f"{ORANGE}[neutral] task output is the same between checkpoints {checkpoint_id_a} {a_unique_params_str} & {checkpoint_id_b} {b_unique_params_str} {END_CLR}"
+                            f"{ORANGE}[neutral] task output is the same between checkpoints {older_checkpoint_id} {old_unique_params_str} & {newer_checkpoint_id} {new_unique_params_str} {END_CLR}"
                         )
-                        params_to_succesful_examples[a_params_str] += 1
-                        params_to_succesful_examples[b_params_str] += 1
-                        if rerun_id_a is not None:
-                            rerun_to_succesful_examples[rerun_id_a] += 1
-                        if rerun_id_b is not None:
-                            rerun_to_succesful_examples[rerun_id_b] += 1
+                        params_to_succesful_examples[new_params_str] += 1
+                        params_to_succesful_examples[old_params_str] += 1
+                        if rerun_id_new is not None:
+                            rerun_to_succesful_examples[rerun_id_new] += 1
+                        if rerun_id_old is not None:
+                            rerun_to_succesful_examples[rerun_id_old] += 1
                     elif output_comparison_feedback.result == FeedbackResult.NEGATIVE:
                         print(
-                            f"{RED}[regression] task output was better in checkpoint {checkpoint_id_a} {a_unique_params_str} than {checkpoint_id_b} {b_unique_params_str} {END_CLR}"
+                            f"{RED}[regression] task output was better in the older checkpoint {older_checkpoint_id} {old_unique_params_str} than {newer_checkpoint_id} {new_unique_params_str} {END_CLR}"
                         )
-                        params_to_succesful_examples[a_params_str] += 1
-                        if rerun_id_a is not None:
-                            rerun_to_succesful_examples[rerun_id_a] += 1
+                        params_to_succesful_examples[old_params_str] += 1
+                        if rerun_id_old is not None:
+                            rerun_to_succesful_examples[rerun_id_old] += 1
                     else:
                         print(
-                            f"{GREEN}[improvement] task output improved from checkpoint {checkpoint_id_a} {a_unique_params_str} to {checkpoint_id_b} {b_unique_params_str}{END_CLR}"
+                            f"{GREEN}[improvement] task output improved from checkpoint {older_checkpoint_id} {old_unique_params_str} to {newer_checkpoint_id} {new_unique_params_str}{END_CLR}"
                         )
-                        params_to_succesful_examples[b_params_str] += 1
-                        if rerun_id_b is not None:
-                            rerun_to_succesful_examples[rerun_id_b] += 1
+                        params_to_succesful_examples[new_params_str] += 1
+                        if rerun_id_new is not None:
+                            rerun_to_succesful_examples[rerun_id_new] += 1
                     if should_record_comparison:
                         self.recorder.record_comparison_result(
                             task_name=task_name,
                             input_hash=input_hash,
                             result=ComparisonResult(
-                                checkpoint_id_a=checkpoint_id_a,
-                                checkpoint_id_b=checkpoint_id_b,
+                                older_checkpoint_id=older_checkpoint_id,
+                                newer_checkpoint_id=newer_checkpoint_id,
                                 output_feedback=output_comparison_feedback,
                             ),
                         )

@@ -15,12 +15,12 @@ eyeball_pp is a python library which can be installed via pip
 `pip install eyeball_pp`
 
 # Concepts 
-eyeball_pp has 3 simple concepts -- record, rerun and compare.
+eyeball_pp has 3 simple concepts -- record, rerun and compare. To see a detailed example check out the examples/ folder in the repo
 
 ## Record
 eyeball_pp consists of a recorder which records the inputs and outputs of your task runs as you are running it and saves them as checkpoints. You can record this locally while developing or from a production system. You can optionally record human feedback for the task output too.
 
-You can record your task using the `record_task` decorator. This will record every run of this function call as a `Checkpoint` for future comparison.
+You can record your task using the `record_task` decorator. This will record every run of this function call as a `Checkpoint` for future comparison. The args_to_record specify which inputs to record and the function return value is saved as the output.
 ```python
 import eyeball_pp
 
@@ -30,6 +30,7 @@ def your_task_function(input_a, input_b):
   ...
   return task_output
 ```
+If you want to record additional inputs within your function call you can just call `eyeball_pp.record_input('variable_name', value)` inside your function.
 
 If your sytem is more complicated, you can also use the `record_input` and `record_output` functions with the start_recording_session context manager
 ```python
@@ -52,6 +53,8 @@ eyeball_pp.record_input(task_name="your_task", checkpoint_id="some_custom_unique
 eyeball_pp.record_output(task_name="your_task", checkpoint_id="some_custom_unique_id", variable_name='output', output=output)
 ```
 
+Data by default gets recorded as yaml files in your repo so you can always inspect it, change it or delete it.
+
 ## Rerun
 You can then re-run these pre-recorded examples as you make changes. This will only re-run each unique set of input variables. eg. if you recorded a run of `your_task_function(1, 2)` 5 times and `your_task_function(3, 4)` 2 times, the re-run would only run 2 examples -- (1, 2) and (3, 4). Each of these re-runs is saved as a new checkpoint for comparison later. 
 ```python
@@ -69,7 +72,7 @@ for vars in rerun_recorded_examples({'model': 'gpt-4', 'temperature': 0.7}, {'mo
   your_task_function(vars['input_a'], vars['input_b'])
 
 # You can access these eval params from anywhere in your code
-@eyeball_pp.record_task
+@eyeball_pp.record_task(args_to_record=['input_a', 'input_b'])
 def your_task_function(input_a, input_b):
   ...
   model = get_eval_param('model') or 'gpt-3.5-turbo'
@@ -100,7 +103,7 @@ The param combination (model=gpt-4, temperature=0.7) works better for 2/2 exampl
 The param combination (model=claude-v1, temperature=None) works equally as good as the (model=gpt-4, temperature=0.7) combination for 2/2 examples
 ```
 
-The comparison will also output a .md file in your repo with the comparison results in a tabular format.
+The comparison will also output a benchmark.md file in your repo with the comparison results in a tabular format.
 
 # Configuration 
 
