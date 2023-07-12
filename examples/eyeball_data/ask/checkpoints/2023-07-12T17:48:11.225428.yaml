@@ -1,0 +1,5 @@
+input_hash: fbd3935023057ad8191971ef3d491d4aabb1b12ae244ed732568a4213609022b
+input_variables:
+  context: '"The lazy dog which is not brown jumps over the quick brown fox"'
+  question: '"What color is the dog?"'
+output: '"brown"'

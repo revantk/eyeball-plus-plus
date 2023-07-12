@@ -68,7 +68,7 @@ T = TypeVar("T", int, float, str, bool, bytes, dict, list, None, JsonSerializabl
 @dataclass
 class EvaluatorConfig:
     sample_rate: float = 1.0
-    dir_path: str = "./eyeball_pp_data"
+    dir_path: str = "./eyeball_data"
 
     @staticmethod
     def _merge(original_config: "EvaluatorConfig", **kwargs) -> "EvaluatorConfig":
@@ -98,8 +98,8 @@ class Evaluator:
     def __init__(self, **config_kwargs) -> None:
         self.config = EvaluatorConfig._merge(EvaluatorConfig(), **config_kwargs)
         self.mode: EvaluatorMode = EvaluatorMode.RECORD
-        # self.recorder: EvalRecorder = DiskRecorder(self.config.dir_path)
-        self.recorder: EvalRecorder = MemoryRecorder()
+        self.recorder: EvalRecorder = FileRecorder(self.config.dir_path)
+        # self.recorder: EvalRecorder = MemoryRecorder()
         self.current_recorder_state = threading.local()
 
     def _get_config(self, **override_config_kwargs) -> EvaluatorConfig:
