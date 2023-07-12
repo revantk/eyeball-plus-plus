@@ -29,7 +29,7 @@ class QAAgent:
         model = eyeball_pp.get_eval_param("model") or "gpt-3.5-turbo"
         temperature = eyeball_pp.get_eval_param("temperature") or 0.5
 
-        return "brown"
+        # return "brown"
         output = openai.ChatCompletion.create(  # type: ignore
             model=model,
             temperature=temperature,
@@ -52,10 +52,10 @@ if __name__ == "__main__":
         question="What color is the fox?",
     )
 
-    # agent.ask(
-    #     context="The lazy dog which is not brown jumps over the quick brown fox",
-    #     question="What color is the dog?",
-    # )
+    agent.ask(
+        context="The lazy dog which is not brown jumps over the quick brown fox",
+        question="What color is the dog?",
+    )
 
     # for input_vars in eyeball_pp.rerun_recorded_examples(
     #     {"model": "gpt-4", "temperature": 0.7}
