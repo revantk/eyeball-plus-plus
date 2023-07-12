@@ -44,6 +44,9 @@ class QAAgent:
 
 
 if __name__ == "__main__":
+    eyeball_pp.set_config(
+        dir_path="examples",
+    )
     # eyeball_pp.rate_recorded_examples()
 
     agent = QAAgent()

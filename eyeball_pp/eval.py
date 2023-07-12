@@ -96,17 +96,17 @@ class EvaluatorMode(Enum):
 
 class Evaluator:
     def __init__(self, **config_kwargs) -> None:
-        self.config = EvaluatorConfig._merge(EvaluatorConfig(), **config_kwargs)
+        self.config = EvaluatorConfig()
         self.mode: EvaluatorMode = EvaluatorMode.RECORD
-        self.recorder: EvalRecorder = FileRecorder(self.config.dir_path)
-        # self.recorder: EvalRecorder = MemoryRecorder()
         self.current_recorder_state = threading.local()
+        self.set_config(**config_kwargs)
 
     def _get_config(self, **override_config_kwargs) -> EvaluatorConfig:
         return EvaluatorConfig._merge(self.config, **override_config_kwargs)
 
     def set_config(self, **config_kwargs) -> None:
         self.config = EvaluatorConfig._merge(self.config, **config_kwargs)
+        self.recorder: EvalRecorder = FileRecorder(self.config.dir_path)
 
     @contextmanager
     def start_recording_session(

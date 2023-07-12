@@ -362,7 +362,7 @@ class MemoryRecorder(EvalRecorder):
 
 class FileRecorder(EvalRecorder):
     def __init__(self, dir_path: str) -> None:
-        self.dir_path = dir_path
+        self.dir_path = os.path.join(dir_path, "eyeball_data")
         if not os.path.exists(self.dir_path):
             os.makedirs(self.dir_path)
         self.yaml_dicts: dict[str, dict[str, str]] = {}
