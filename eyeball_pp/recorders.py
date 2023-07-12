@@ -140,9 +140,7 @@ class EvalRecorder(Protocol):
         ...
 
     def get_comparison_results_for_input_hash(
-        self,
-        task_name: str,
-        input_hash: str,
+        self, task_name: str, input_hash: str, num_results: int = 3
     ) -> list[ComparisonResult]:
         ...
 
@@ -338,12 +336,15 @@ class MemoryRecorder(EvalRecorder):
         self,
         task_name: str,
         input_hash: str,
+        num_results: int = 3,
     ) -> list[ComparisonResult]:
         task = self.tasks[task_name]
         if input_hash not in task.input_hash_to_comparison_results:
             return []
         comparison_results = task.input_hash_to_comparison_results[input_hash]
-        return [task.comparison_results[key] for key in comparison_results]
+        return [task.comparison_results[key] for key in comparison_results][
+            :num_results
+        ]
 
     def delete_checkpoints_for_input_hash(
         self,
@@ -362,7 +363,7 @@ class MemoryRecorder(EvalRecorder):
 
 class FileRecorder(EvalRecorder):
     def __init__(self, dir_path: str) -> None:
-        self.dir_path = os.path.join(dir_path, "eyeball_data")
+        self.dir_path = dir_path
         if not os.path.exists(self.dir_path):
             os.makedirs(self.dir_path)
         self.yaml_dicts: dict[str, dict[str, str]] = {}
@@ -566,17 +567,22 @@ class FileRecorder(EvalRecorder):
                 task_names.append(dir_name)
         return task_names
 
-    def _write_latest_comparison_results(self, task_name: str) -> None:
-        ...
-        
     def record_comparison_result(
         self,
         task_name: str,
         input_hash: str,
         result: ComparisonResult,
     ) -> None:
-        # TODO: record as a md file
-        ...
+        comparison_dir = os.path.join(self.dir_path, task_name, "comparison_results")
+        if not os.path.exists(comparison_dir):
+            os.makedirs(comparison_dir)
+
+        file_name = f"{input_hash}_{result.older_checkpoint_id}_{result.newer_checkpoint_id}.yaml"
+        file_path = os.path.join(comparison_dir, file_name)
+        yaml.dump(
+            result.output_feedback.as_dict(),
+            open(file_path, "w+"),
+        )
 
     def get_comparison_result(
         self,
@@ -584,7 +590,30 @@ class FileRecorder(EvalRecorder):
         older_checkpoint_id: str,
         newer_checkpoint_id: str,
     ) -> Optional[ComparisonResult]:
-        ...
+        comparison_dir = os.path.join(self.dir_path, task_name, "comparison_results")
+        if not os.path.exists(comparison_dir):
+            return None
+
+        for file_name in os.listdir(comparison_dir):
+            splits = os.path.splitext(file_name)[0].split("_")
+            if len(splits) != 3:
+                continue
+
+            if splits[1] != older_checkpoint_id:
+                continue
+
+            if splits[2] != newer_checkpoint_id:
+                continue
+
+            if file_name.endswith(".yaml"):
+                file_path = os.path.join(comparison_dir, file_name)
+                yaml_dict = yaml.load(open(file_path, "r"), Loader=yaml.FullLoader)
+                return ComparisonResult(
+                    older_checkpoint_id=older_checkpoint_id,
+                    newer_checkpoint_id=newer_checkpoint_id,
+                    output_feedback=OutputFeedback.from_dict(yaml_dict),
+                )
+        return None
 
     def get_comparison_results_for_input_hash(
         self,
@@ -592,7 +621,32 @@ class FileRecorder(EvalRecorder):
         input_hash: str,
         num_results: int = 3,
     ) -> list[ComparisonResult]:
-        ...
+        comparison_dir = os.path.join(self.dir_path, task_name, "comparison_results")
+        if not os.path.exists(comparison_dir):
+            return []
+
+        results: list[ComparisonResult] = []
+        for file_name in os.listdir(comparison_dir):
+            splits = file_name.split("_")
+            if len(splits) != 3:
+                continue
+
+            if splits[0] != input_hash:
+                continue
+
+            if file_name.endswith(".yaml"):
+                file_path = os.path.join(comparison_dir, file_name)
+                yaml_dict = yaml.load(open(file_path, "r"), Loader=yaml.FullLoader)
+                results.append(
+                    ComparisonResult(
+                        older_checkpoint_id=splits[1],
+                        newer_checkpoint_id=splits[2],
+                        output_feedback=OutputFeedback.from_dict(yaml_dict),
+                    )
+                )
+        return sorted(results, key=lambda x: x.newer_checkpoint_id, reverse=True)[
+            :num_results
+        ]
 
     def delete_checkpoints_for_input_hash(
         self,
@@ -712,9 +766,10 @@ class DiskRecorder(EvalRecorder):
         self,
         task_name: str,
         input_hash: str,
+        num_results: int = 3,
     ) -> list[ComparisonResult]:
         return self.memory_recorder.get_comparison_results_for_input_hash(
-            task_name=task_name, input_hash=input_hash
+            task_name=task_name, input_hash=input_hash, num_results=num_results
         )
 
     def record_output(
@@ -739,3 +794,6 @@ class DiskRecorder(EvalRecorder):
             task_name=task_name, input_hash=input_hash
         )
         pickle.dump(self.memory_recorder, open(self.file_name, "wb"))
+
+    def compute_latest_comparison_results(self, task_name: str) -> None:
+        ...

@@ -1,0 +1,3 @@
+message: The context specifies that the dog is not brown. Therefore, both responses
+  A and B are incorrect as they contradict the information given in the context.
+result: POSITIVE

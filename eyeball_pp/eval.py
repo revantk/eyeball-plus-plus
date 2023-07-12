@@ -3,6 +3,7 @@ from contextlib import contextmanager
 from enum import Enum
 import inspect
 import json
+import os
 from .recorders import (
     Checkpoint,
     ComparisonResult,
@@ -39,7 +40,8 @@ import dataclasses
 import datetime
 from .utils import get_user_input
 from .classes import FeedbackResult
-
+from rich.console import Console
+from rich.table import Table
 
 GREEN = "\x1b[32m"
 ORANGE = "\x1b[33m"
@@ -106,7 +108,8 @@ class Evaluator:
 
     def set_config(self, **config_kwargs) -> None:
         self.config = EvaluatorConfig._merge(self.config, **config_kwargs)
-        self.recorder: EvalRecorder = FileRecorder(self.config.dir_path)
+        self.data_dir = os.path.join(self.config.dir_path, "eyeball_data")
+        self.recorder: EvalRecorder = FileRecorder(self.data_dir)
 
     @contextmanager
     def start_recording_session(
@@ -600,6 +603,88 @@ class Evaluator:
         )
         self.recorder.delete_checkpoints_for_input_hash(task_name, input_hash)
 
+    def compute_latest_comparison_results(self, task_name: str) -> None:
+        input_names: set[str] = set()
+        rows: list[dict[str, str]] = []
+        comparison_column_names = [
+            "latest_checkpoint",
+            "previous_checkpoint",
+            "the_checkpoint_before",
+        ]
+
+        for input_hash in self.recorder.get_input_hashes(task_name):
+            checkpoints = self.recorder.get_latest_checkpoints(
+                task_name, input_hash, num_checkpoints=1
+            )
+            if len(checkpoints) == 0:
+                continue
+
+            checkpoint = self.recorder.get_checkpoint(task_name, checkpoints[0])
+            if checkpoint is None:
+                continue
+
+            row_data = {}
+            input_names.update(checkpoint.input_variables.keys())
+            for input_name, input_value in checkpoint.input_variables.items():
+                row_data[input_name] = input_value
+
+            comparison_results = self.recorder.get_comparison_results_for_input_hash(
+                task_name=task_name,
+                input_hash=input_hash,
+                num_results=len(comparison_column_names),
+            )
+            sorted_comparison_results = sorted(
+                comparison_results,
+                key=lambda x: x.newer_checkpoint_id,
+                reverse=True,
+            )
+            for idx, comparison_result in enumerate(sorted_comparison_results):
+                msg = comparison_result.output_feedback.result.name
+                new_checkpoint = self.recorder.get_checkpoint(
+                    task_name, comparison_result.newer_checkpoint_id
+                )
+                if new_checkpoint is not None:
+                    print(new_checkpoint)
+                    if new_checkpoint.output_score is not None:
+                        msg += f" ({new_checkpoint.output_score})"
+                    eval_params_str = ", ".join(
+                        f"{k}={v}" for k, v in new_checkpoint.eval_params.items()
+                    )
+                    msg += f" ({eval_params_str})"
+                row_data[comparison_column_names[idx]] = msg
+
+            rows.append(row_data)
+
+        md_data = []
+        table = Table(title="Comparison Results")
+
+        if len(rows) > 0:
+            column_names = sorted(list(input_names)) + comparison_column_names
+            for column_name in column_names:
+                table.add_column(column_name, justify="left")
+
+            md_data.append("| " + " | ".join(column_names) + " |")
+
+            for row in rows:
+                row_tuple = tuple(
+                    row.get(column_name, "") for column_name in column_names
+                )
+                table.add_row(*row_tuple)
+                md_data.append("| " + " | ".join(row_tuple) + " |")
+
+            task_data_dir = os.path.join(self.data_dir, task_name)
+            if not os.path.exists(task_data_dir):
+                os.makedirs(task_data_dir)
+
+            with open(
+                os.path.join(task_data_dir, "benchmark.md"),
+                "w+",
+            ) as f:
+                f.write("\n".join(md_data))
+
+            console = Console()
+            console.print(table)
+
     def compare_recorded_checkpoints(
         self,
         task_name: Optional[str] = None,
@@ -859,6 +944,8 @@ class Evaluator:
                 if params == "":
                     params = "default"
                 print(f"{params}: {num_successes}/{num_comparisons} successes")
+
+            self.compute_latest_comparison_results(task_name)
 
         finally:
             self.mode = EvaluatorMode.RECORD
