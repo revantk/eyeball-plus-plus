@@ -641,16 +641,17 @@ class Evaluator:
             for idx, comparison_result in enumerate(sorted_comparison_results):
                 msg = comparison_result.output_feedback.result.name
                 new_checkpoint = self.recorder.get_checkpoint(
-                    task_name, comparison_result.newer_checkpoint_id
+                    task_name=task_name,
+                    checkpoint_id=comparison_result.newer_checkpoint_id,
                 )
                 if new_checkpoint is not None:
-                    print(new_checkpoint)
                     if new_checkpoint.output_score is not None:
-                        msg += f" ({new_checkpoint.output_score})"
+                        msg += f" (score: {new_checkpoint.output_score})"
                     eval_params_str = ", ".join(
                         f"{k}={v}" for k, v in new_checkpoint.eval_params.items()
                     )
-                    msg += f" ({eval_params_str})"
+                    if eval_params_str:
+                        msg += f" ({eval_params_str})"
                 row_data[comparison_column_names[idx]] = msg
 
             rows.append(row_data)

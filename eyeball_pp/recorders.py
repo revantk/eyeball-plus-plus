@@ -352,8 +352,6 @@ class MemoryRecorder(EvalRecorder):
         input_hash: str,
     ) -> None:
         task = self.tasks[task_name]
-        print(input_hash)
-        print(task.input_hashes.keys())
         if input_hash not in task.input_hashes:
             return
         for checkpoint_id in task.input_hashes[input_hash]:
@@ -627,7 +625,7 @@ class FileRecorder(EvalRecorder):
 
         results: list[ComparisonResult] = []
         for file_name in os.listdir(comparison_dir):
-            splits = file_name.split("_")
+            splits = os.path.splitext(file_name)[0].split("_")
             if len(splits) != 3:
                 continue
 
