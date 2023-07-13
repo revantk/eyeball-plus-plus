@@ -9,6 +9,14 @@ class FeedbackResult(IntEnum):
     NEGATIVE = -1
     NEUTRAL = 0
 
+    def __str__(self) -> str:
+        if self == FeedbackResult.POSITIVE:
+            return "📈 +ve"
+        elif self == FeedbackResult.NEGATIVE:
+            return "📉 -ve"
+        else:
+            return "📊 neutral"
+
 
 @dataclass
 class OutputFeedback:
@@ -65,5 +73,8 @@ class OutputComparator(Protocol):
 
 # The output scorer is used to score the output of a model given the objective and inputs
 # The scorer should return a float with a higher value indicating a better output
-# First input is the objective , second is a dictionary of input variables, third is the value for the output
-OutputScorer = Callable[[str, dict[str, str], str], OutputScore]
+class OutputScorer(Protocol):
+    def __call__(
+        self, objective: str, input_variables: dict[str, str], output: str
+    ) -> OutputScore:
+        ...

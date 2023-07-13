@@ -639,7 +639,7 @@ class Evaluator:
                 reverse=True,
             )
             for idx, comparison_result in enumerate(sorted_comparison_results):
-                msg = comparison_result.output_feedback.result.name
+                msg = str(comparison_result.output_feedback.result)
                 new_checkpoint = self.recorder.get_checkpoint(
                     task_name=task_name,
                     checkpoint_id=comparison_result.newer_checkpoint_id,
@@ -665,6 +665,7 @@ class Evaluator:
                 table.add_column(column_name, justify="left")
 
             md_data.append("| " + " | ".join(column_names) + " |")
+            md_data.append("| " + " | ".join(["---"] * len(column_names)) + " |")
 
             for row in rows:
                 row_tuple = tuple(
