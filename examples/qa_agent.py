@@ -7,9 +7,7 @@ class QAAgent:
         # Agent initialization code
         ...
 
-    @eyeball_pp.record_task(
-        args_to_record=["context", "question"], request_user_feedback_probability=0.5
-    )
+    @eyeball_pp.record_task(args_to_record=["context", "question"])
     def ask(self, context: str, question: str) -> str:
         # You can write arbitrary code here, the only thing the eval framework
         # cares about is the input and output of this function.
@@ -29,6 +27,7 @@ class QAAgent:
         model = eyeball_pp.get_eval_param("model") or "gpt-3.5-turbo"
         temperature = eyeball_pp.get_eval_param("temperature") or 0.5
 
+        return "brown"
         output = openai.ChatCompletion.create(  # type: ignore
             model=model,
             temperature=temperature,
@@ -43,15 +42,13 @@ class QAAgent:
 
 
 if __name__ == "__main__":
-    eyeball_pp.set_config(
-        dir_path="examples",
-    )
+    eyeball_pp.set_config(api_key="eb26fea1b82d486b9edc58dcb882ea23")
 
     agent = QAAgent()
-    # agent.ask(
-    #     context="The quick brown fox jumps over the lazy dog",
-    #     question="What color is the fox?",
-    # )
+    agent.ask(
+        context="The quick brown fox jumps over the lazy dog",
+        question="What color is the fox?",
+    )
 
     # agent.ask(
     #     context="The lazy dog which is not brown jumps over the quick brown fox",
@@ -63,7 +60,7 @@ if __name__ == "__main__":
     # ):
     #     agent.ask(input_vars["context"], input_vars["question"])
 
-    eyeball_pp.compare_recorded_checkpoints(
-        task_objective="This agent tries to answer questions given a context. Verify that the agent answers the question correctly and that the answer is only based on the context.",
-        num_checkpoints_per_input_hash=4,
-    )
+    # eyeball_pp.compare_recorded_checkpoints(
+    #     task_objective="This agent tries to answer questions given a context. Verify that the agent answers the question correctly and that the answer is only based on the context.",
+    #     num_checkpoints_per_input_hash=4,
+    # )

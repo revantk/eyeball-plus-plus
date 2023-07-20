@@ -5,6 +5,7 @@ import inspect
 import json
 import os
 from .recorders import (
+    ApiClientRecorder,
     Checkpoint,
     ComparisonResult,
     DiskRecorder,
@@ -71,6 +72,7 @@ T = TypeVar("T", int, float, str, bool, bytes, dict, list, None, JsonSerializabl
 class EvaluatorConfig:
     sample_rate: float = 1.0
     dir_path: str = "./eyeball_data"
+    api_key: Optional[str] = None
 
     @staticmethod
     def _merge(original_config: "EvaluatorConfig", **kwargs) -> "EvaluatorConfig":
@@ -109,7 +111,10 @@ class Evaluator:
     def set_config(self, **config_kwargs) -> None:
         self.config = EvaluatorConfig._merge(self.config, **config_kwargs)
         self.data_dir = os.path.join(self.config.dir_path, "eyeball_data")
-        self.recorder: EvalRecorder = FileRecorder(self.data_dir)
+        if self.config.api_key is not None:
+            self.recorder: EvalRecorder = ApiClientRecorder(api_key=self.config.api_key)
+        else:
+            self.recorder = FileRecorder(self.data_dir)
 
     @contextmanager
     def start_recording_session(

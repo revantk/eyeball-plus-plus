@@ -6,8 +6,11 @@ import pickle
 from typing import Any, Optional, Protocol
 from dataclasses import dataclass
 import dataclasses
-
+import requests
 from .classes import OutputFeedback, OutputScore
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -114,7 +117,7 @@ class EvalRecorder(Protocol):
 
     def get_latest_checkpoints(
         self, task_name: str, input_hash: str, num_checkpoints: int = 2
-    ) -> list[str]:
+    ) -> list[Checkpoint]:
         ...
 
     def get_input_hashes(self, task_name: str) -> list[str]:
@@ -150,6 +153,218 @@ class EvalRecorder(Protocol):
         input_hash: str,
     ) -> None:
         ...
+
+
+class ApiClientRecorder(EvalRecorder):
+    def __init__(self, api_key: str) -> None:
+        self.api_key = api_key
+        # TODO: make this a lru cache
+        self.checkpoint_dicts: dict[str, dict[str, Any]] = {}
+        self.url = "http://0.0.0.0:8081"
+        # self.url = "https://eyeball.tark.ai/"
+
+    def _get_headers(self) -> dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self.api_key}",
+        }
+
+    def _record_checkpoint(
+        self,
+        task_name: str,
+        checkpoint_id: str,
+        prefixes: list[str],
+        name: str,
+        value: Any,
+        flush: bool = False,
+    ) -> dict[str, Any]:
+        dict_key = f"{task_name},{checkpoint_id}"
+        if dict_key not in self.checkpoint_dicts:
+            checkpoint_dict: dict[str, Any] = {"checkpoint_id": checkpoint_id}
+        else:
+            checkpoint_dict = self.checkpoint_dicts[dict_key]
+
+        current_dict = checkpoint_dict
+        for prefix in prefixes:
+            if prefix not in current_dict:
+                current_dict[prefix] = {}
+            current_dict = current_dict[prefix]
+        current_dict[name] = value
+        self.checkpoint_dicts[dict_key] = dict(checkpoint_dict)
+
+        if flush:
+            print(f"Recording checkpoint {checkpoint_id}, {checkpoint_dict}")
+            response = requests.post(
+                f"{self.url}/record_checkpoint",
+                json={
+                    "task_name": task_name,
+                    "checkpoint_id": checkpoint_id,
+                    **checkpoint_dict,
+                },
+                headers=self._get_headers(),
+            )
+            if response.status_code != 200:
+                logger.error(
+                    f"Failed to record checkpoint {checkpoint_id} -- {response.status_code}, {response.text}"
+                )
+        return checkpoint_dict
+
+    def record_input_variable(
+        self, task_name: str, checkpoint_id: str, variable_name: str, value: str
+    ) -> None:
+        self._record_checkpoint(
+            task_name=task_name,
+            checkpoint_id=checkpoint_id,
+            prefixes=["input_variables"],
+            name=variable_name,
+            value=value,
+        )
+
+    def record_output(self, task_name: str, checkpoint_id: str, output: str) -> None:
+        self._record_checkpoint(
+            task_name=task_name,
+            checkpoint_id=checkpoint_id,
+            prefixes=[],
+            name="output",
+            value=output,
+            flush=True,
+        )
+
+    def record_eval_params(
+        self,
+        task_name: str,
+        checkpoint_id: str,
+        eval_params: dict[str, Any],
+        rerun_metadata: dict[str, Any] | None = None,
+    ) -> None:
+        self._record_checkpoint(
+            task_name=task_name,
+            checkpoint_id=checkpoint_id,
+            prefixes=[],
+            name="eval_params",
+            value=eval_params,
+        )
+        if rerun_metadata is not None:
+            self._record_checkpoint(
+                task_name=task_name,
+                checkpoint_id=checkpoint_id,
+                prefixes=[],
+                name="rerun_metadata",
+                value=rerun_metadata,
+            )
+
+    def record_comparison_result(
+        self, task_name: str, input_hash: str, result: ComparisonResult
+    ) -> None:
+        requests.post(
+            f"{self.url}/record_comparison_result",
+            json={
+                "task_name": task_name,
+                "input_hash": input_hash,
+                "result": result,
+            },
+            headers=self._get_headers(),
+        )
+
+    def record_output_score(
+        self, task_name: str, checkpoint_id: str, score: OutputScore
+    ) -> None:
+        requests.post(
+            f"{self.url}/record_output_score",
+            json={
+                "task_name": task_name,
+                "checkpoint_id": checkpoint_id,
+                "score": score.as_dict(),
+            },
+            headers=self._get_headers(),
+        )
+
+    def record_output_feedback(
+        self, task_name: str, checkpoint_id: str, feedback: OutputFeedback
+    ) -> None:
+        requests.post(
+            f"{self.url}/record_output_feedback",
+            json={
+                "task_name": task_name,
+                "checkpoint_id": checkpoint_id,
+                "feedback": feedback.as_dict(),
+            },
+            headers=self._get_headers(),
+        )
+
+    def delete_checkpoints_for_input_hash(
+        self, task_name: str, input_hash: str
+    ) -> None:
+        ...
+
+    def get_checkpoint(self, task_name: str, checkpoint_id: str) -> Checkpoint | None:
+        dict_key = f"{task_name},{checkpoint_id}"
+        if dict_key in self.checkpoint_dicts:
+            return Checkpoint(**(self.checkpoint_dicts[dict_key]))
+
+        response = requests.get(
+            f"{self.url}/get_checkpoint",
+            json={
+                "task_name": task_name,
+                "checkpoint_id": checkpoint_id,
+            },
+            headers=self._get_headers(),
+        )
+        if response.status_code != 200:
+            logger.debug(
+                f"Failed to get checkpoint - {checkpoint_id}: {response.status_code}"
+            )
+            return None
+        return Checkpoint(**response.json())
+
+    def get_comparison_result(
+        self, task_name: str, older_checkpoint_id: str, newer_checkpoint_id: str
+    ) -> ComparisonResult | None:
+        ...
+
+    def get_comparison_results_for_input_hash(
+        self, task_name: str, input_hash: str, num_results: int = 3
+    ) -> list[ComparisonResult]:
+        return []
+
+    def get_input_hashes(self, task_name: str) -> list[str]:
+        response = requests.get(
+            f"{self.url}/get_input_hashes",
+            json={
+                "task_name": task_name,
+            },
+            headers=self._get_headers(),
+        )
+        if response.status_code != 200:
+            logger.debug(f"Failed to get input hashes: {response.status_code}")
+            return []
+        return response.json()["input_hashes"]
+
+    def get_latest_checkpoints(
+        self, task_name: str, input_hash: str, num_checkpoints: int = 2
+    ) -> list[Checkpoint]:
+        response = requests.get(
+            f"{self.url}/get_latest_checkpoints",
+            json={
+                "task_name": task_name,
+                "input_hash": input_hash,
+                "num_checkpoints": num_checkpoints,
+            },
+            headers=self._get_headers(),
+        )
+        if response.status_code != 200:
+            logger.debug(f"Failed to get latest checkpoints: {response.status_code}")
+            return []
+        return response.json()["checkpoints"]
+
+    def get_task_names(self) -> list[str]:
+        response = requests.get(
+            f"{self.url}/get_task_names",
+            headers=self._get_headers(),
+        )
+        if response.status_code != 200:
+            logger.debug(f"Failed to get task names: {response.status_code}")
+            return []
+        return response.json()["task_names"]
 
 
 @dataclass
@@ -526,18 +741,19 @@ class FileRecorder(EvalRecorder):
         checkpoint.rerun_metadata = yaml_dict.get("rerun_metadata")
         return checkpoint
 
-    def _read_checkpoints(self, task_name: str) -> dict[str, list[str]]:
-        input_hashes_to_checkpoints: dict[str, list[str]] = {}
+    def _read_checkpoints(self, task_name: str) -> dict[str, list[Checkpoint]]:
+        input_hashes_to_checkpoints: dict[str, list[Checkpoint]] = {}
         dir_name = os.path.join(self.dir_path, task_name, "checkpoints")
         for file_name in os.listdir(dir_name):
             if file_name.endswith(".yaml"):
-                checkpoint_id = file_name[:-5]
                 file_path = os.path.join(dir_name, file_name)
                 yaml_dict = yaml.load(open(file_path, "r"), Loader=yaml.FullLoader)
                 if input_hash := yaml_dict.get("input_hash"):
                     if input_hash not in input_hashes_to_checkpoints:
                         input_hashes_to_checkpoints[input_hash] = []
-                    input_hashes_to_checkpoints[input_hash].append(checkpoint_id)
+                    input_hashes_to_checkpoints[input_hash].append(
+                        Checkpoint(**yaml_dict)
+                    )
 
         for input_hash in input_hashes_to_checkpoints:
             input_hashes_to_checkpoints[input_hash].sort(reverse=True)
@@ -545,7 +761,7 @@ class FileRecorder(EvalRecorder):
 
     def get_latest_checkpoints(
         self, task_name: str, input_hash: str, num_checkpoints: int = 2
-    ) -> list[str]:
+    ) -> list[Checkpoint]:
         input_hashes_to_checkpoints = self._read_checkpoints(task_name)
         if input_hash not in input_hashes_to_checkpoints:
             return []
