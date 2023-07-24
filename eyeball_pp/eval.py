@@ -76,7 +76,7 @@ class EvaluatorConfig:
 
     @staticmethod
     def _merge(original_config: "EvaluatorConfig", **kwargs) -> "EvaluatorConfig":
-        """Kwargs should be a subset of the fields of the original config."""
+        """Kwargs should be a subset of the fields of the original config.   """
         if len(kwargs) == 0:
             return original_config
 
