@@ -19,6 +19,13 @@ class ComparisonResult:
     newer_checkpoint_id: str
     output_feedback: OutputFeedback
 
+    def as_dict(self):
+        return {
+            "older_checkpoint_id": self.older_checkpoint_id,
+            "newer_checkpoint_id": self.newer_checkpoint_id,
+            "output_feedback": self.output_feedback.as_dict(),
+        }
+
 
 def get_input_hash(input_variables: dict[str, str]) -> str:
     sorted_input_vars = sorted(
@@ -260,7 +267,7 @@ class ApiClientRecorder(EvalRecorder):
             json={
                 "task_name": task_name,
                 "input_hash": input_hash,
-                "result": result,
+                "result": result.as_dict(),
             },
             headers=self._get_headers(),
         )
@@ -354,7 +361,7 @@ class ApiClientRecorder(EvalRecorder):
         if response.status_code != 200:
             logger.debug(f"Failed to get latest checkpoints: {response.status_code}")
             return []
-        return response.json()["checkpoints"]
+        return [Checkpoint(**data) for data in response.json()["checkpoints"]]
 
     def get_task_names(self) -> list[str]:
         response = requests.get(
@@ -446,14 +453,19 @@ class MemoryRecorder(EvalRecorder):
 
     def get_latest_checkpoints(
         self, task_name: str, input_hash: str, num_checkpoints: int = 2
-    ) -> list[str]:
+    ) -> list[Checkpoint]:
         if task_name not in self.tasks:
             return []
         task = self.tasks[task_name]
         if input_hash not in task.input_hashes:
             return []
 
-        return sorted(task.input_hashes[input_hash])[-num_checkpoints:]
+        return [
+            task.checkpoints[checkpoint_id]
+            for checkpoint_id in sorted(task.input_hashes[input_hash])[
+                -num_checkpoints:
+            ]
+        ]
 
     def get_checkpoint(
         self, task_name: str, checkpoint_id: str
@@ -931,7 +943,7 @@ class DiskRecorder(EvalRecorder):
 
     def get_latest_checkpoints(
         self, task_name: str, input_hash: str, num_checkpoints: int = 2
-    ) -> list[str]:
+    ) -> list[Checkpoint]:
         return self.memory_recorder.get_latest_checkpoints(
             task_name=task_name, input_hash=input_hash, num_checkpoints=num_checkpoints
         )
