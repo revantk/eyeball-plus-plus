@@ -1,5 +1,6 @@
 import hashlib
 import json
+import pkg_resources
 import yaml
 import os
 import pickle
@@ -7,6 +8,8 @@ from typing import Any, Optional, Protocol
 from dataclasses import dataclass
 import dataclasses
 import requests
+
+from .utils import LruCache
 from .classes import OutputFeedback, OutputScore
 import logging
 
@@ -163,12 +166,13 @@ class EvalRecorder(Protocol):
 
 
 class ApiClientRecorder(EvalRecorder):
-    def __init__(self, api_key: str) -> None:
+    def __init__(self, api_key: str, api_url: Optional[str] = None) -> None:
         self.api_key = api_key
-        # TODO: make this a lru cache
-        self.checkpoint_dicts: dict[str, dict[str, Any]] = {}
-        self.url = "http://0.0.0.0:8081"
-        # self.url = "https://eyeball.tark.ai/"
+        if api_url is None:
+            self.url = "https://eyeball.tark.ai/"
+        else:
+            self.url = api_url
+        self.checkpoint_dicts: LruCache = LruCache(max_size=100)
 
     def _get_headers(self) -> dict[str, str]:
         return {

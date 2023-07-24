@@ -73,6 +73,7 @@ class EvaluatorConfig:
     sample_rate: float = 1.0
     dir_path: str = "./eyeball_data"
     api_key: Optional[str] = None
+    api_url: Optional[str] = None
 
     @staticmethod
     def _merge(original_config: "EvaluatorConfig", **kwargs) -> "EvaluatorConfig":
@@ -112,7 +113,9 @@ class Evaluator:
         self.config = EvaluatorConfig._merge(self.config, **config_kwargs)
         self.data_dir = os.path.join(self.config.dir_path, "eyeball_data")
         if self.config.api_key is not None:
-            self.recorder: EvalRecorder = ApiClientRecorder(api_key=self.config.api_key)
+            self.recorder: EvalRecorder = ApiClientRecorder(
+                api_key=self.config.api_key, api_url=self.config.api_url
+            )
         else:
             self.recorder = FileRecorder(self.data_dir)
 
