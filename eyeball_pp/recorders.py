@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
 import pkg_resources
@@ -173,6 +174,7 @@ class ApiClientRecorder(EvalRecorder):
         else:
             self.url = api_url
         self.checkpoint_dicts: LruCache = LruCache(max_size=100)
+        self.pool = ThreadPoolExecutor(max_workers=1)
 
     def _get_headers(self) -> dict[str, str]:
         return {
@@ -203,20 +205,25 @@ class ApiClientRecorder(EvalRecorder):
         self.checkpoint_dicts[dict_key] = dict(checkpoint_dict)
 
         if flush:
-            print(f"Recording checkpoint {checkpoint_id}, {checkpoint_dict}")
-            response = requests.post(
-                f"{self.url}/record_checkpoint",
-                json={
-                    "task_name": task_name,
-                    "checkpoint_id": checkpoint_id,
-                    **checkpoint_dict,
-                },
-                headers=self._get_headers(),
-            )
-            if response.status_code != 200:
-                logger.error(
-                    f"Failed to record checkpoint {checkpoint_id} -- {response.status_code}, {response.text}"
+
+            def _record():
+                response = requests.post(
+                    f"{self.url}/record_checkpoint",
+                    json={
+                        "task_name": task_name,
+                        "checkpoint_id": checkpoint_id,
+                        **checkpoint_dict,
+                    },
+                    headers=self._get_headers(),
                 )
+                if response.status_code != 200:
+                    logger.error(
+                        f"Failed to record checkpoint {checkpoint_id} -- {response.status_code}, {response.text}"
+                    )
+                else:
+                    logger.debug(f"Recorded checkpoint {checkpoint_id}")
+
+            self.pool.submit(_record)
         return checkpoint_dict
 
     def record_input_variable(
