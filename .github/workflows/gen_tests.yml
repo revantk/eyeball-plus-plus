@@ -77,4 +77,4 @@ jobs:
           message-success: "✅ Test generation succeeded ([link](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}))"
           message-failure: "❌ Test generation failed ([link](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}))"
           message-cancelled: "❌ Test generation cancelled ([link](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}))"
-        if: steps.check.outputs.triggered == 'true'
+        if: always()
