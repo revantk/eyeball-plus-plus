@@ -33,7 +33,10 @@ jobs:
         run: >
           GITHUB_USER=${{ github.repository_owner }}
           GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
-          hub pr checkout ${{ github.event.number }}
+          PR_NUMBER=${{ github.event.number }}
+          COMMENT_NUMBER=${{ github.event.issue.number }}
+          NUMBER=${PR_NUMBER:-${COMMENT_NUMBER}}
+          hub pr checkout $NUMBER
         if: steps.check.outputs.triggered == 'true'
       - name: Run Gen Tests
         uses: addnab/docker-run-action@v3
