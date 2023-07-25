@@ -34,10 +34,10 @@ jobs:
           GITHUB_USER=${{ github.repository_owner }}
           GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
 
-          if [ ${{ github.even_name  }} == "pull_request" ]; then
-              PR_NUMBER=${{ github.event.number }}
+          if [ "${{ github.even_name }}" == "pull_request" ]; then
+              PR_NUMBER="${{ github.event.number }}"
           else
-              PR_NUMBER=${{ github.event.issue.number }}
+              PR_NUMBER="${{ github.event.issue.number }}"
           fi
           echo $PR_NUMBER
           hub pr checkout $PR_NUMBER
