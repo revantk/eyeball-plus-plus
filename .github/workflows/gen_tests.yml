@@ -12,81 +12,10 @@ jobs:
     name: Generate Unit Tests
     runs-on: ubuntu-latest
     steps:
-      - name: Check PR comment for trigger
-        uses: khan/pull-request-comment-trigger@v1.1.0
-        id: check
-        with:
-          trigger: "/gen_tests"
-          reaction: rocket
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Check PR comment for benchmark trigger
-        uses: khan/pull-request-comment-trigger@v1.1.0
-        id: check_benchmark
-        with:
-          trigger: "/benchmark_gen_tests"
-          reaction: rocket
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Checkout
-        uses: actions/checkout@v3
-        if: steps.check.outputs.triggered == 'true' || steps.check_benchmark.outputs.triggered == 'true'
-      - name: Comment link to action
-        uses: mshick/add-pr-comment@v2
-        with:
-          message-id: ${{ github.run_id }}
-          message: "⏳ Running test generation ([link](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}))"
-        if: steps.check.outputs.triggered == 'true' || steps.check_benchmark.outputs.triggered == 'true'
-      - name: Checkout branch
-        run: |
-          if [ "${{ github.even_name }}" == "pull_request" ]; then
-              PR_NUMBER="${{ github.event.number }}"
-          else
-              PR_NUMBER="${{ github.event.issue.number }}"
-          fi
-          echo $PR_NUMBER
-          hub pr checkout $PR_NUMBER
-        env: 
-          GITHUB_USER: ${{ github.repository_owner }} 
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
-        if: steps.check.outputs.triggered == 'true' || steps.check_benchmark.outputs.triggered == 'true'
-      - name: Run Gen Tests
-        uses: addnab/docker-run-action@v3
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-          registry: gcr.io
-          image: revant/gen_tests:latest
-          options: > 
-            -v ${{ github.workspace }}:/app 
-            -e ROBUSTAI_API_KEY=${{ secrets.ROBUSTAI_API_KEY }}
-          run: |
-            git config --global --add safe.directory /app && git branch &&
-            find . -name "requirement*" -type f -exec pip3 install -q -r '{}' ';' &&
-            echo "${{ secrets.ENV_FILE }}" > .env &&
-            gen_tests --mode=4 --run_debugging=False --benchmark=${{ steps.check_benchmark.outputs.triggered }} > gen_tests_output.txt
-        if: steps.check.outputs.triggered == 'true' || steps.check_benchmark.outputs.triggered == 'true'
-      - name: Commit tests
-        uses: stefanzweifel/git-auto-commit-action@v4
-        with:
-            commit_user_name: "RobustAI"
-            commit_message: "Generated unit tests"
-            file_pattern: '*.py'
-        if: steps.check.outputs.triggered == 'true' || steps.check_benchmark.outputs.triggered == 'true'
-      - name: Add output PR comment
-        id: gen_tests_output
-        run: |
-          echo "GEN_TESTS_OUTPUT<<EOF" >> "$GITHUB_ENV" &&
-          cat ./gen_tests_output.txt >> "$GITHUB_ENV" &&
-          echo "EOF" >> "$GITHUB_ENV"
-        if: steps.check.outputs.triggered == 'true' || steps.check_benchmark.outputs.triggered == 'true'
-      - name: Update comment with status
-        uses: mshick/add-pr-comment@v2
-        with:
-          message-id: ${{ github.run_id }}
-          update-only: true
-          message: "✅ Test generation succeeded ([link](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}))"
-          message-success: "✅ Test generation succeeded ([link](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}))"
-          message-failure: "❌ Test generation failed ([link](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}))"
-          message-cancelled: "❌ Test generation cancelled ([link](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}))"
-        if: always()
+    - name: Checkout
+      uses: actions/checkout@v3
+    - name: Unit Test Generator
+      uses: revantk/gen-tests-action@main
+      with:
+        robustai-api-key: ${{ secrets.ROBUSTAI_API_KEY }}
+        github-token: ${{ secrets.GITHUB_TOKEN }}
