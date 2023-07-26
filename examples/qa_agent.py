@@ -42,9 +42,10 @@ class QAAgent:
 
 
 if __name__ == "__main__":
-    eyeball_pp.set_config(
-        api_key="eb26fea1b82d486b9edc58dcb882ea23", api_url="http://0.0.0.0:8081"
-    )
+    # eyeball_pp.set_config(
+    #     api_key="eb26fea1b82d486b9edc58dcb882ea23", api_url="http://0.0.0.0:8081"
+    # )
+    eyeball_pp.set_config(dir_path="examples")
 
     agent = QAAgent()
     agent.ask(
