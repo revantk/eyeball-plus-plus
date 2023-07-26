@@ -1,5 +1,7 @@
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
+import pkg_resources
 import yaml
 import os
 import pickle
@@ -7,6 +9,8 @@ from typing import Any, Optional, Protocol
 from dataclasses import dataclass
 import dataclasses
 import requests
+
+from .utils import LruCache
 from .classes import OutputFeedback, OutputScore
 import logging
 
@@ -18,6 +22,13 @@ class ComparisonResult:
     older_checkpoint_id: str
     newer_checkpoint_id: str
     output_feedback: OutputFeedback
+
+    def as_dict(self):
+        return {
+            "older_checkpoint_id": self.older_checkpoint_id,
+            "newer_checkpoint_id": self.newer_checkpoint_id,
+            "output_feedback": self.output_feedback.as_dict(),
+        }
 
 
 def get_input_hash(input_variables: dict[str, str]) -> str:
@@ -156,12 +167,14 @@ class EvalRecorder(Protocol):
 
 
 class ApiClientRecorder(EvalRecorder):
-    def __init__(self, api_key: str) -> None:
+    def __init__(self, api_key: str, api_url: Optional[str] = None) -> None:
         self.api_key = api_key
-        # TODO: make this a lru cache
-        self.checkpoint_dicts: dict[str, dict[str, Any]] = {}
-        self.url = "http://0.0.0.0:8081"
-        # self.url = "https://eyeball.tark.ai/"
+        if api_url is None:
+            self.url = "https://eyeball.tark.ai/"
+        else:
+            self.url = api_url
+        self.checkpoint_dicts: LruCache = LruCache(max_size=100)
+        self.pool = ThreadPoolExecutor(max_workers=1)
 
     def _get_headers(self) -> dict[str, str]:
         return {
@@ -192,20 +205,25 @@ class ApiClientRecorder(EvalRecorder):
         self.checkpoint_dicts[dict_key] = dict(checkpoint_dict)
 
         if flush:
-            print(f"Recording checkpoint {checkpoint_id}, {checkpoint_dict}")
-            response = requests.post(
-                f"{self.url}/record_checkpoint",
-                json={
-                    "task_name": task_name,
-                    "checkpoint_id": checkpoint_id,
-                    **checkpoint_dict,
-                },
-                headers=self._get_headers(),
-            )
-            if response.status_code != 200:
-                logger.error(
-                    f"Failed to record checkpoint {checkpoint_id} -- {response.status_code}, {response.text}"
+
+            def _record():
+                response = requests.post(
+                    f"{self.url}/record_checkpoint",
+                    json={
+                        "task_name": task_name,
+                        "checkpoint_id": checkpoint_id,
+                        **checkpoint_dict,
+                    },
+                    headers=self._get_headers(),
                 )
+                if response.status_code != 200:
+                    logger.error(
+                        f"Failed to record checkpoint {checkpoint_id} -- {response.status_code}, {response.text}"
+                    )
+                else:
+                    logger.debug(f"Recorded checkpoint {checkpoint_id}")
+
+            self.pool.submit(_record)
         return checkpoint_dict
 
     def record_input_variable(
@@ -260,7 +278,7 @@ class ApiClientRecorder(EvalRecorder):
             json={
                 "task_name": task_name,
                 "input_hash": input_hash,
-                "result": result,
+                "result": result.as_dict(),
             },
             headers=self._get_headers(),
         )
@@ -354,7 +372,7 @@ class ApiClientRecorder(EvalRecorder):
         if response.status_code != 200:
             logger.debug(f"Failed to get latest checkpoints: {response.status_code}")
             return []
-        return response.json()["checkpoints"]
+        return [Checkpoint(**data) for data in response.json()["checkpoints"]]
 
     def get_task_names(self) -> list[str]:
         response = requests.get(
@@ -446,14 +464,19 @@ class MemoryRecorder(EvalRecorder):
 
     def get_latest_checkpoints(
         self, task_name: str, input_hash: str, num_checkpoints: int = 2
-    ) -> list[str]:
+    ) -> list[Checkpoint]:
         if task_name not in self.tasks:
             return []
         task = self.tasks[task_name]
         if input_hash not in task.input_hashes:
             return []
 
-        return sorted(task.input_hashes[input_hash])[-num_checkpoints:]
+        return [
+            task.checkpoints[checkpoint_id]
+            for checkpoint_id in sorted(task.input_hashes[input_hash])[
+                -num_checkpoints:
+            ]
+        ]
 
     def get_checkpoint(
         self, task_name: str, checkpoint_id: str
@@ -931,7 +954,7 @@ class DiskRecorder(EvalRecorder):
 
     def get_latest_checkpoints(
         self, task_name: str, input_hash: str, num_checkpoints: int = 2
-    ) -> list[str]:
+    ) -> list[Checkpoint]:
         return self.memory_recorder.get_latest_checkpoints(
             task_name=task_name, input_hash=input_hash, num_checkpoints=num_checkpoints
         )

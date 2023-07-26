@@ -73,6 +73,7 @@ class EvaluatorConfig:
     sample_rate: float = 1.0
     dir_path: str = "./eyeball_data"
     api_key: Optional[str] = None
+    api_url: Optional[str] = None
 
     @staticmethod
     def _merge(original_config: "EvaluatorConfig", **kwargs) -> "EvaluatorConfig":
@@ -112,7 +113,9 @@ class Evaluator:
         self.config = EvaluatorConfig._merge(self.config, **config_kwargs)
         self.data_dir = os.path.join(self.config.dir_path, "eyeball_data")
         if self.config.api_key is not None:
-            self.recorder: EvalRecorder = ApiClientRecorder(api_key=self.config.api_key)
+            self.recorder: EvalRecorder = ApiClientRecorder(
+                api_key=self.config.api_key, api_url=self.config.api_url
+            )
         else:
             self.recorder = FileRecorder(self.data_dir)
 
@@ -196,21 +199,25 @@ class Evaluator:
                 output=self._serialize(value),
             )
 
-    def _get_last_checkpoint_id(
+    def _get_last_checkpoint(
         self,
         task_name: str,
         input_hash: str,
         current_checkpoint_id: str,
-    ) -> Optional[str]:
+    ) -> Optional[Checkpoint]:
         checkpoints = self.recorder.get_latest_checkpoints(
             task_name, input_hash, num_checkpoints=2
         )
+        if len(checkpoints) == 0:
+            return None
 
-        for checkpoint_id in reversed(checkpoints):
-            if checkpoint_id == current_checkpoint_id:
-                continue
-            return checkpoint_id
-        return None
+        if checkpoints[0].checkpoint_id == current_checkpoint_id:
+            if len(checkpoints) == 1:
+                return None
+            return checkpoints[1]
+
+        else:
+            return checkpoints[0]
 
     def _get_recorder_state(
         self,
@@ -448,19 +455,16 @@ class Evaluator:
 
             for idx, input_hash in enumerate(input_hashes):
                 recorder_checkpoint_id = datetime.datetime.utcnow().isoformat()
-                last_checkpoind_id = self._get_last_checkpoint_id(
+                last_checkpoint = self._get_last_checkpoint(
                     task_name=task_name,
                     input_hash=input_hash,
                     current_checkpoint_id=recorder_checkpoint_id,
                 )
-                if last_checkpoind_id is None:
+                if last_checkpoint is None:
                     continue
 
-                self.checkpoint_id_to_rerun = last_checkpoind_id
-                checkpoint_to_rerun = self.recorder.get_checkpoint(
-                    task_name=task_name,
-                    checkpoint_id=last_checkpoind_id,
-                )
+                self.checkpoint_id_to_rerun = last_checkpoint.checkpoint_id
+                checkpoint_to_rerun = last_checkpoint
                 if checkpoint_to_rerun is None:
                     continue
 
@@ -477,7 +481,7 @@ class Evaluator:
                         with self.start_recording_session(
                             task_name=task_name,
                             checkpoint_id=recorder_checkpoint_id,
-                            checkpoint_id_to_rerun=last_checkpoind_id,
+                            checkpoint_id_to_rerun=checkpoint_to_rerun.checkpoint_id,
                         ):
                             self.recorder.record_eval_params(
                                 task_name=task_name,
@@ -527,15 +531,10 @@ class Evaluator:
             self.mode = EvaluatorMode.RATE_EXAMPLES
             for input_hash in input_hashes_lst:
                 already_seen_outputs_to_feedback: dict[str:OutputFeedback] = {}
-                checkpoint_ids = self.recorder.get_latest_checkpoints(
+                checkpoints = self.recorder.get_latest_checkpoints(
                     task_name, input_hash, num_checkpoints=4
                 )
-                raw_checkpoints = [
-                    self.recorder.get_checkpoint(task_name, c) for c in checkpoint_ids
-                ]
-                checkpoints: list[Checkpoint] = [
-                    c for c in raw_checkpoints if c is not None
-                ]
+
                 if len(checkpoints) == 0:
                     continue
 
@@ -624,7 +623,7 @@ class Evaluator:
             if len(checkpoints) == 0:
                 continue
 
-            checkpoint = self.recorder.get_checkpoint(task_name, checkpoints[0])
+            checkpoint = checkpoints[0]
             if checkpoint is None:
                 continue
 
@@ -734,28 +733,20 @@ class Evaluator:
 
             num_comparisons = 0
             for idx, input_hash in enumerate(input_hashes_list):
-                checkpoint_ids = self.recorder.get_latest_checkpoints(
+                checkpoints_list = self.recorder.get_latest_checkpoints(
                     task_name,
                     input_hash,
                     num_checkpoints=num_checkpoints_per_input_hash,
                 )
 
-                checkpoints: dict[str, Checkpoint] = {}
-                filtered_checkpoint_ids = []
-                for checkpoind_id in checkpoint_ids:
-                    checkpoint = self.recorder.get_checkpoint(
-                        task_name=task_name,
-                        checkpoint_id=checkpoind_id,
-                    )
-                    if (
-                        checkpoint is not None
-                        and checkpoint.output is not None
-                        and checkpoint.output != "null"
-                        and checkpoint.output != "None"
-                    ):
-                        filtered_checkpoint_ids.append(checkpoind_id)
-                        checkpoints[checkpoind_id] = checkpoint
-                checkpoint_ids = sorted(filtered_checkpoint_ids, reverse=True)
+                checkpoints: dict[str, Checkpoint] = {
+                    c.checkpoint_id: c
+                    for c in checkpoints_list
+                    if c.output is not None
+                    and c.output != "null"
+                    and c.output != "None"
+                }
+                checkpoint_ids = sorted(checkpoints.keys(), reverse=True)
 
                 if len(checkpoint_ids) == 0:
                     continue

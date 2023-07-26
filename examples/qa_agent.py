@@ -42,7 +42,9 @@ class QAAgent:
 
 
 if __name__ == "__main__":
-    eyeball_pp.set_config(api_key="eb26fea1b82d486b9edc58dcb882ea23")
+    eyeball_pp.set_config(
+        api_key="eb26fea1b82d486b9edc58dcb882ea23", api_url="http://0.0.0.0:8081"
+    )
 
     agent = QAAgent()
     agent.ask(
@@ -50,10 +52,10 @@ if __name__ == "__main__":
         question="What color is the fox?",
     )
 
-    # agent.ask(
-    #     context="The lazy dog which is not brown jumps over the quick brown fox",
-    #     question="What color is the dog?",
-    # )
+    agent.ask(
+        context="The lazy dog which is not brown jumps over the quick brown fox",
+        question="What color is the dog?",
+    )
 
     # for input_vars in eyeball_pp.rerun_recorded_examples(
     #     {"model": "gpt-4", "temperature": 0.7}
