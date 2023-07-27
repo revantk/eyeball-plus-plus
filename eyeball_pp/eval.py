@@ -619,7 +619,7 @@ class Evaluator:
         for input_hash in self.recorder.get_input_hashes(task_name):
             # TODO: this is a slow operation
             checkpoints = self.recorder.get_latest_checkpoints(
-                task_name, input_hash, num_checkpoints=1
+                task_name, input_hash, num_checkpoints=len(comparison_column_names)
             )
             if len(checkpoints) == 0:
                 continue
@@ -659,13 +659,21 @@ class Evaluator:
                     if eval_params_str:
                         msg += f" ({eval_params_str})"
                 row_data[comparison_column_names[idx]] = msg
-            if (
-                comparison_column_names[0] not in row_data
-                and checkpoint.output_score is not None
-            ):
-                row_data[
-                    comparison_column_names[0]
-                ] = f"score: **{checkpoint.output_score.score: .2f}**, {checkpoint.output_score.message}"
+
+            for idx in range(len(comparison_column_names)):
+                if (
+                    comparison_column_names[idx] not in row_data
+                    and idx < len(checkpoints)
+                    and (checkpoint := checkpoints[idx]).output_score is not None
+                ):
+                    msg = f"score: **{checkpoint.output_score.score: .2f}**, {checkpoint.output_score.message}"
+                    eval_params_str = ", ".join(
+                        f"{k}={v}" for k, v in checkpoint.eval_params.items()
+                    )
+                    if eval_params_str:
+                        msg += f" ({eval_params_str})"
+                    row_data[comparison_column_names[idx]] = msg
+
             rows.append(row_data)
 
         md_data = []
