@@ -77,6 +77,39 @@ class Checkpoint:
         msg += self.get_input_var_str()
         return msg
 
+    def as_dict(self) -> dict[str, Any]:
+        checkpoint_dict = {
+            "checkpoint_id": self.checkpoint_id,
+            "input_variables": self.input_variables,
+            "output": self.output,
+        }
+        if self.eval_params:
+            checkpoint_dict["eval_params"] = self.eval_params
+        if self.output_feedback is not None:
+            checkpoint_dict["output_feedback"] = self.output_feedback.as_dict()
+        if self.output_score is not None:
+            checkpoint_dict["output_score"] = self.output_score.as_dict()
+        if self.rerun_metadata:
+            checkpoint_dict["rerun_metadata"] = self.rerun_metadata
+
+        return checkpoint_dict
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "Checkpoint":
+        return cls(
+            checkpoint_id=data["checkpoint_id"],
+            input_variables=data["input_variables"],
+            eval_params=data.get("eval_params") or {},
+            output=data["output"],
+            output_feedback=OutputFeedback.from_dict(data["output_feedback"])
+            if data.get("output_feedback") is not None
+            else None,
+            output_score=OutputScore.from_dict(data["output_score"])
+            if data.get("output_score") is not None
+            else None,
+            rerun_metadata=data.get("rerun_metadata") or {},
+        )
+
 
 class EvalRecorder(Protocol):
     def record_input_variable(
@@ -162,6 +195,11 @@ class EvalRecorder(Protocol):
         self,
         task_name: str,
         input_hash: str,
+    ) -> None:
+        ...
+
+    def edit_checkpoint(
+        self, task_name: str, checkpoint_id: str, edit_dict: dict[str, Any]
     ) -> None:
         ...
 
@@ -384,6 +422,11 @@ class ApiClientRecorder(EvalRecorder):
             return []
         return response.json()["task_names"]
 
+    def edit_checkpoint(
+        self, task_name: str, checkpoint_id: str, edit_dict: dict[str, Any]
+    ) -> None:
+        ...
+
 
 @dataclass
 class Task:
@@ -604,6 +647,39 @@ class FileRecorder(EvalRecorder):
             os.makedirs(self.dir_path)
         self.yaml_dicts: dict[str, dict[str, str]] = {}
 
+    def edit_checkpoint(
+        self, task_name: str, checkpoint_id: str, edit_dict: dict[str, Any]
+    ) -> None:
+        old_checkpoint = self.get_checkpoint(task_name, checkpoint_id)
+        if old_checkpoint is None:
+            return
+        old_input_hash = old_checkpoint.get_input_hash()
+        checkpoint_dict = old_checkpoint.as_dict()
+        checkpoint_dict.update(edit_dict)
+        new_checkpoint = Checkpoint.from_dict(checkpoint_dict)
+        new_input_hash = new_checkpoint.get_input_hash()
+        checkpoint_dict["input_hash"] = new_input_hash
+
+        dir_name = os.path.join(self.dir_path, task_name, "checkpoints")
+        if not os.path.exists(dir_name):
+            os.makedirs(dir_name)
+        file_name = os.path.join(dir_name, f"{checkpoint_id}.yaml")
+        yaml.dump(checkpoint_dict, open(file_name, "w+"))
+
+        if old_input_hash != new_input_hash:
+            inputs_dir_name = os.path.join(self.dir_path, task_name, "inputs")
+            if not os.path.exists(inputs_dir_name):
+                os.makedirs(inputs_dir_name)
+
+            input_file_name = os.path.join(
+                self.dir_path, task_name, "inputs", f"{new_input_hash}.yaml"
+            )
+            yaml.dump(new_checkpoint.input_variables, open(input_file_name, "w+"))
+            try:
+                os.remove(os.path.join(inputs_dir_name, f"{old_input_hash}.yaml"))
+            except FileNotFoundError:
+                pass
+
     def _record_checkpoint(
         self,
         task_name: str,
@@ -738,15 +814,9 @@ class FileRecorder(EvalRecorder):
             flush=True,
         )
 
-    def get_checkpoint(
-        self, task_name: str, checkpoint_id: str
-    ) -> Optional[Checkpoint]:
-        file_name = os.path.join(
-            self.dir_path, task_name, "checkpoints", f"{checkpoint_id}.yaml"
-        )
-        if not os.path.exists(file_name):
-            return None
-        yaml_dict = yaml.load(open(file_name, "r"), Loader=yaml.FullLoader)
+    def _checkpoint_from_yaml_dict(
+        self, yaml_dict: dict[str, Any], checkpoint_id: str
+    ) -> Checkpoint:
         checkpoint = Checkpoint(checkpoint_id=checkpoint_id)
         checkpoint.input_variables = yaml_dict.get("input_variables", {})
         checkpoint.eval_params = yaml_dict.get("eval_params", {})
@@ -761,8 +831,20 @@ class FileRecorder(EvalRecorder):
             if "output_score" in yaml_dict
             else None
         )
-        checkpoint.rerun_metadata = yaml_dict.get("rerun_metadata")
+        checkpoint.rerun_metadata = yaml_dict.get("rerun_metadata") or {}
         return checkpoint
+
+    def get_checkpoint(
+        self, task_name: str, checkpoint_id: str
+    ) -> Optional[Checkpoint]:
+        file_name = os.path.join(
+            self.dir_path, task_name, "checkpoints", f"{checkpoint_id}.yaml"
+        )
+        if not os.path.exists(file_name):
+            return None
+        yaml_dict = yaml.load(open(file_name, "r"), Loader=yaml.FullLoader)
+        yaml_dict["checkpoint_id"] = checkpoint_id
+        return Checkpoint.from_dict(yaml_dict)
 
     def _read_checkpoints(self, task_name: str) -> dict[str, list[Checkpoint]]:
         input_hashes_to_checkpoints: dict[str, list[Checkpoint]] = {}
@@ -774,12 +856,15 @@ class FileRecorder(EvalRecorder):
                 if input_hash := yaml_dict.get("input_hash"):
                     if input_hash not in input_hashes_to_checkpoints:
                         input_hashes_to_checkpoints[input_hash] = []
+                    yaml_dict["checkpoint_id"] = file_name[:-5]
                     input_hashes_to_checkpoints[input_hash].append(
-                        Checkpoint(**yaml_dict)
+                        Checkpoint.from_dict(yaml_dict)
                     )
 
         for input_hash in input_hashes_to_checkpoints:
-            input_hashes_to_checkpoints[input_hash].sort(reverse=True)
+            input_hashes_to_checkpoints[input_hash].sort(
+                reverse=True, key=lambda x: x.checkpoint_id
+            )
         return input_hashes_to_checkpoints
 
     def get_latest_checkpoints(

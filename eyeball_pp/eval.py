@@ -71,7 +71,7 @@ T = TypeVar("T", int, float, str, bool, bytes, dict, list, None, JsonSerializabl
 @dataclass
 class EvaluatorConfig:
     sample_rate: float = 1.0
-    dir_path: str = "./eyeball_data"
+    dir_path: str = "."
     api_key: Optional[str] = None
     api_url: Optional[str] = None
 
@@ -617,6 +617,7 @@ class Evaluator:
         ]
 
         for input_hash in self.recorder.get_input_hashes(task_name):
+            # TODO: this is a slow operation
             checkpoints = self.recorder.get_latest_checkpoints(
                 task_name, input_hash, num_checkpoints=1
             )
@@ -632,6 +633,7 @@ class Evaluator:
             for input_name, input_value in checkpoint.input_variables.items():
                 row_data[input_name] = input_value
 
+            # TODO: this is a slow operation, we should probably load all checkpoints and comparison results for an input hash in one iteration
             comparison_results = self.recorder.get_comparison_results_for_input_hash(
                 task_name=task_name,
                 input_hash=input_hash,
@@ -657,7 +659,13 @@ class Evaluator:
                     if eval_params_str:
                         msg += f" ({eval_params_str})"
                 row_data[comparison_column_names[idx]] = msg
-
+            if (
+                comparison_column_names[0] not in row_data
+                and checkpoint.output_score is not None
+            ):
+                row_data[
+                    comparison_column_names[0]
+                ] = f"score: **{checkpoint.output_score.score: .2f}**, {checkpoint.output_score.message}"
             rows.append(row_data)
 
         md_data = []
@@ -724,7 +732,6 @@ class Evaluator:
         input_hashes_list = input_hashes_list[:num_input_hashes]
 
         print(f"Comparing {len(input_hashes_list)} inputs for task:`{task_name}`")
-
         try:
             self.mode = EvaluatorMode.COMPARE_CHECKPOINTS
 
