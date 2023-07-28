@@ -15,7 +15,7 @@ eyeball_pp is a python library which can be installed via pip
 `pip install eyeball_pp`
 
 # Concepts 
-eyeball_pp has 3 simple concepts -- record, rerun and compare. To see a detailed example check out the examples/ folder in the repo
+eyeball_pp has 3 simple concepts -- record, rerun and compare. To see an example see this [notebook](examples/qa_task_notebook.ipynb) or checkout more examples in the [examples](examples/) folder. 
 
 ## Record
 eyeball_pp consists of a recorder which records the inputs and outputs of your task runs as you are running it and saves them as checkpoints. You can record this locally while developing or from a production system. You can optionally record human feedback for the task output too.
