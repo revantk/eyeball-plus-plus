@@ -1,0 +1,3 @@
+message: Same -- Both responses are equally good because they both accurately reflect
+  that the color of the dog is not specified in the context.
+result: POSITIVE
