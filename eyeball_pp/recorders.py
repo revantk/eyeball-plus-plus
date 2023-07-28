@@ -639,6 +639,12 @@ class MemoryRecorder(EvalRecorder):
             del task.checkpoints[checkpoint_id]
         del task.input_hashes[input_hash]
 
+    def edit_checkpoint(
+        self, task_name: str, checkpoint_id: str, edit_dict: dict[str, Any]
+    ) -> None:
+        # TODO: implement
+        return None
+
 
 class FileRecorder(EvalRecorder):
     def __init__(self, dir_path: str) -> None:

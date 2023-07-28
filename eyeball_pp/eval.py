@@ -4,6 +4,7 @@ from enum import Enum
 import inspect
 import json
 import os
+import types
 from .recorders import (
     ApiClientRecorder,
     Checkpoint,
@@ -103,7 +104,13 @@ class Evaluator:
     def __init__(self, **config_kwargs) -> None:
         self.config = EvaluatorConfig()
         self.mode: EvaluatorMode = EvaluatorMode.RECORD
-        self.current_recorder_state = threading.local()
+        self.running_in_notebook = False
+        try:
+            get_ipython()  # type: ignore
+            self.running_in_notebook = True
+            self.current_recorder_state = types.SimpleNamespace()
+        except NameError:
+            self.current_recorder_state = threading.local()  # type: ignore
         self.set_config(**config_kwargs)
 
     def _get_config(self, **override_config_kwargs) -> EvaluatorConfig:
@@ -116,6 +123,8 @@ class Evaluator:
             self.recorder: EvalRecorder = ApiClientRecorder(
                 api_key=self.config.api_key, api_url=self.config.api_url
             )
+        elif self.running_in_notebook:
+            self.recorder = MemoryRecorder()
         else:
             self.recorder = FileRecorder(self.data_dir)
 
@@ -126,7 +135,9 @@ class Evaluator:
         checkpoint_id: Optional[str] = None,
         checkpoint_id_to_rerun: Optional[str] = None,
     ) -> Iterator[None]:
-        if hasattr(self.current_recorder_state, "recorder_checkpoint_id"):
+        if not self.running_in_notebook and hasattr(
+            self.current_recorder_state, "recorder_checkpoint_id"
+        ):
             # This should not happen but if it does, we should not overwrite the previous checkpoint id
             # Instead we should set it to None so there is no confusion
             # If the user calls get_eval_params this will raise an error
