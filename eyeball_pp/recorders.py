@@ -346,7 +346,7 @@ class ApiClientRecorder(EvalRecorder):
         task_name: str,
         checkpoint_id: str,
         eval_params: dict[str, Any],
-        rerun_metadata: dict[str, Any] | None = None,
+        rerun_metadata: dict[str, Any] = None,
     ) -> None:
         self._record_checkpoint(
             task_name=task_name,
@@ -408,7 +408,7 @@ class ApiClientRecorder(EvalRecorder):
     ) -> None:
         ...
 
-    def get_checkpoint(self, task_name: str, checkpoint_id: str) -> Checkpoint | None:
+    def get_checkpoint(self, task_name: str, checkpoint_id: str) -> Checkpoint:
         dict_key = f"{task_name},{checkpoint_id}"
         if dict_key in self.checkpoint_dicts:
             return Checkpoint(**(self.checkpoint_dicts[dict_key]))
@@ -430,7 +430,7 @@ class ApiClientRecorder(EvalRecorder):
 
     def get_comparison_result(
         self, task_name: str, older_checkpoint_id: str, newer_checkpoint_id: str
-    ) -> ComparisonResult | None:
+    ) -> ComparisonResult:
         ...
 
     def get_comparison_results_for_input_hash(
