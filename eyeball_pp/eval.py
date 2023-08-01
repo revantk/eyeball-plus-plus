@@ -40,7 +40,7 @@ from functools import wraps
 from dataclasses import dataclass
 import dataclasses
 import datetime
-from .utils import get_user_input
+from .utils import get_user_input, output_table
 from .classes import FeedbackResult
 from rich.console import Console
 from rich.table import Table
@@ -252,6 +252,22 @@ class Evaluator:
             )
 
         return task_name, recorder_checkpoint_id
+
+    def _get_recorded_task_name(self, task_name: Optional[str]) -> str:
+        if task_name is not None:
+            return task_name
+        if hasattr(self.current_recorder_state, "task_name"):
+            return self.current_recorder_state.task_name
+
+        task_names = self.recorder.get_task_names()
+        if len(task_names) == 0:
+            raise ValueError("No task names found")
+        elif len(task_names) == 1:
+            return task_names[0]
+        else:
+            raise ValueError(
+                f"Must provide a task_name as you have multiple tasks recorded -- Found: {task_names}"
+            )
 
     def get_eval_params(
         self,
@@ -729,16 +745,7 @@ class Evaluator:
         use_cached_scores: bool = True,
         use_cached_comparisons: bool = True,
     ) -> None:
-        if task_name is None:
-            task_names = self.recorder.get_task_names()
-            if len(task_names) == 0:
-                raise ValueError("No task names found")
-            elif len(task_names) == 1:
-                task_name = task_names[0]
-            else:
-                raise ValueError(
-                    f"Must provide a task_name as you have multiple tasks recorded -- Found: {task_names}"
-                )
+        task_name = self._get_recorded_task_name(task_name)
 
         if output_comparator is None and output_scorer is None:
             output_comparator = model_graded_comparator
@@ -970,9 +977,78 @@ class Evaluator:
                 print(f"{params}: {num_successes}/{num_comparisons} successes")
 
             self.compute_latest_comparison_results(task_name)
+            self.calculate_system_health(task_name=task_name)
 
         finally:
             self.mode = EvaluatorMode.RECORD
+
+    def calculate_system_health(
+        self,
+        num_samples: int = 10,
+        plotting_frequency_in_days: int = 1,
+        task_name: Optional[str] = None,
+    ) -> None:
+        task_name = self._get_recorded_task_name(task_name=task_name)
+
+        # calculate rolling average if we have output scores for the last num_samples checkpoints
+        input_hashes = self.recorder.get_input_hashes(task_name=task_name)
+
+        print(f"Gathered {len(input_hashes)} inputs for task:`{task_name}`")
+
+        checkpoints: list[Checkpoint] = []
+        for input_hash in input_hashes:
+            checkpoints += self.recorder.get_latest_checkpoints(
+                task_name=task_name,
+                input_hash=input_hash,
+                num_checkpoints=num_samples,
+            )
+
+        checkpoints = sorted(checkpoints, key=lambda x: x.checkpoint_id, reverse=True)
+        print(f"Calulating rolling average for {len(checkpoints)} checkpoints")
+
+        if len(checkpoints) == 0:
+            return
+
+        # If the outputs have scores, we can calculate a rolling average
+        scored_checkpoints = [c for c in checkpoints if c.output_score is not None]
+        if len(scored_checkpoints) == 0:
+            print("Only supports checkpoints with output scores for now")
+            return
+
+        rolling_averages: list[dict[str, Any]] = []
+
+        date_to_use = datetime.datetime.utcnow().date()
+        while scored_checkpoints[-1].created_at.date() < date_to_use:
+            total_score = 0.0
+            num_checkpoints_used = 0
+            input_hash_set = set()
+            for checkpoint in scored_checkpoints:
+                if num_checkpoints_used >= num_samples:
+                    break
+
+                if checkpoint.created_at.date() < date_to_use:
+                    total_score += checkpoint.output_score.score  # type: ignore
+                    num_checkpoints_used += 1
+                    input_hash_set.add(checkpoint.get_input_hash())
+
+            rolling_averages.append(
+                {
+                    "date": date_to_use.isoformat(),
+                    "average": total_score / float(num_checkpoints_used),
+                    "num_checkpoints_used": num_checkpoints_used,
+                    "input_diversity": len(input_hash_set),
+                }
+            )
+            date_to_use -= datetime.timedelta(days=plotting_frequency_in_days)
+
+        output_table(
+            rolling_averages,
+            title="System Health (Rolling average of scores)",
+            column_names=["date", "average", "num_checkpoints_used", "input_diversity"],
+            markdown_file=os.path.join(self.data_dir, task_name, "system_health.md"),
+        )
+
+        # If the outputs don't have scores, we can give the better output a score of 1 and the worse output a score of 0.5 and propagate that score to the older checkpoints
 
 
 _default_evaluator = Evaluator()
@@ -988,3 +1064,4 @@ rerun_recorded_examples = _default_evaluator.rerun_recorded_examples
 rate_recorded_examples = _default_evaluator.rate_recorded_examples
 compare_recorded_checkpoints = _default_evaluator.compare_recorded_checkpoints
 delete_checkpoints_for_input_vars = _default_evaluator.delete_checkpoints_for_input_vars
+calculate_system_health = _default_evaluator.calculate_system_health

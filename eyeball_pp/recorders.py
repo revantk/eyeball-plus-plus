@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 import hashlib
 import json
 import pkg_resources
@@ -109,6 +110,10 @@ class Checkpoint:
             else None,
             rerun_metadata=data.get("rerun_metadata") or {},
         )
+
+    @property
+    def created_at(self) -> datetime:
+        return datetime.fromisoformat(self.checkpoint_id)
 
 
 class EvalRecorder(Protocol):

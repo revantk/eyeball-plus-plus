@@ -8,6 +8,7 @@ from .eval import (
     rate_recorded_examples,
     compare_recorded_checkpoints,
     delete_checkpoints_for_input_vars,
+    calculate_system_health,
     Evaluator,
 )
 
@@ -35,4 +36,5 @@ __all__ = [
     "OutputComparator",
     "OutputScorer",
     "OutputScore",
+    "calculate_system_health",
 ]
