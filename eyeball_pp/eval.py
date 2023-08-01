@@ -123,7 +123,7 @@ class Evaluator:
             self.recorder: EvalRecorder = ApiClientRecorder(
                 api_key=self.config.api_key, api_url=self.config.api_url
             )
-        elif self.running_in_notebook:
+        elif self.running_in_notebook or not self.config.sample_rate:
             self.recorder = MemoryRecorder()
         else:
             self.recorder = FileRecorder(self.data_dir)
