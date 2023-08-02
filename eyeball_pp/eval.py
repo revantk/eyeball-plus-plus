@@ -3,6 +3,7 @@ from contextlib import contextmanager
 from enum import Enum
 import inspect
 import json
+import math
 import os
 import types
 from .recorders import (
@@ -40,7 +41,7 @@ from functools import wraps
 from dataclasses import dataclass
 import dataclasses
 import datetime
-from .utils import get_user_input, output_table
+from .utils import get_edges_n_hops, get_score_map, get_user_input, output_table
 from .classes import FeedbackResult
 from rich.console import Console
 from rich.table import Table
@@ -1014,6 +1015,8 @@ class Evaluator:
 
         # calculate rolling average if we have output scores for the last num_samples checkpoints
         input_hashes = self.recorder.get_input_hashes(task_name=task_name)
+        if len(input_hashes) == 0:
+            print("No input hashes exist for this task")
 
         print(f"Gathered {len(input_hashes)} inputs for task:`{task_name}`")
 
@@ -1033,9 +1036,47 @@ class Evaluator:
 
         # If the outputs have scores, we can calculate a rolling average
         scored_checkpoints = [c for c in checkpoints if c.output_score is not None]
+        output_scores: dict[str, OutputScore] = {}
+
         if len(scored_checkpoints) == 0:
-            print("Only supports checkpoints with output scores for now")
-            return
+            # If the outputs don't have scores, we can give the better output a score of 1 and the worse output a score of 0.5 and propagate that score to the older checkpoints
+            comparison_results: list[ComparisonResult] = []
+            for input_hash in input_hashes:
+                comparison_results += (
+                    self.recorder.get_comparison_results_for_input_hash(
+                        task_name=task_name,
+                        input_hash=input_hash,
+                        num_results=num_samples,
+                    )
+                )
+
+            edges: dict[str, dict[str, float]] = defaultdict(lambda: dict())
+            for comparison_result in comparison_results:
+                if comparison_result.output_feedback.result == FeedbackResult.POSITIVE:
+                    edges[comparison_result.older_checkpoint_id][
+                        comparison_result.newer_checkpoint_id
+                    ] = 1.0
+                elif (
+                    comparison_result.output_feedback.result == FeedbackResult.NEGATIVE
+                ):
+                    edges[comparison_result.newer_checkpoint_id][
+                        comparison_result.older_checkpoint_id
+                    ] = 1.0
+                else:
+                    edges[comparison_result.newer_checkpoint_id][
+                        comparison_result.older_checkpoint_id
+                    ] = 0.0
+                    edges[comparison_result.older_checkpoint_id][
+                        comparison_result.newer_checkpoint_id
+                    ] = 0.0
+            scores = get_score_map(edges)
+            denom = max(scores.values())  # sum(math.pow(s, 2) for s in scores.values())
+            for checkpoint_id, score in scores.items():
+                output_scores[checkpoint_id] = OutputScore(
+                    score=score / denom,
+                    message="",
+                )
+            scored_checkpoints = checkpoints
 
         rolling_averages: list[dict[str, Any]] = []
 
@@ -1049,7 +1090,15 @@ class Evaluator:
                     break
 
                 if checkpoint.created_at.date() < date_to_use:
-                    total_score += checkpoint.output_score.score  # type: ignore
+                    if checkpoint.output_score is not None:
+                        output_score: Optional[OutputScore] = checkpoint.output_score
+                    else:
+                        output_score = output_scores.get(checkpoint.checkpoint_id)
+
+                    if output_score is None:
+                        continue
+
+                    total_score += output_score.score
                     num_checkpoints_used += 1
                     input_hash_set.add(checkpoint.get_input_hash())
 
@@ -1069,8 +1118,6 @@ class Evaluator:
             column_names=["date", "average", "num_checkpoints_used", "input_diversity"],
             markdown_file=os.path.join(self.data_dir, task_name, "system_health.md"),
         )
-
-        # If the outputs don't have scores, we can give the better output a score of 1 and the worse output a score of 0.5 and propagate that score to the older checkpoints
 
 
 _default_evaluator = Evaluator()
