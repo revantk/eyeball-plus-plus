@@ -992,6 +992,8 @@ class Evaluator:
 
         # calculate rolling average if we have output scores for the last num_samples checkpoints
         input_hashes = self.recorder.get_input_hashes(task_name=task_name)
+        if len(input_hashes) == 0:
+            print("No input hashes exist for this task")
 
         print(f"Gathered {len(input_hashes)} inputs for task:`{task_name}`")
 
@@ -1012,6 +1014,48 @@ class Evaluator:
         # If the outputs have scores, we can calculate a rolling average
         scored_checkpoints = [c for c in checkpoints if c.output_score is not None]
         if len(scored_checkpoints) == 0:
+            # If the outputs don't have scores, we can give the better output a score of 1 and the worse output a score of 0.5 and propagate that score to the older checkpoints
+            comparison_results: list[ComparisonResult] = []
+            for input_hash in input_hashes:
+                comparison_results += (
+                    self.recorder.get_comparison_results_for_input_hash(
+                        task_name=task_name,
+                        input_hash=input_hash,
+                        num_results=num_samples,
+                    )
+                )
+
+            nodes_which_are_better_than_key: dict[str, set[str]] = defaultdict(
+                lambda: set()
+            )
+            nodes_which_are_equal_to_key: dict[str, set[str]] = defaultdict(
+                lambda: set()
+            )
+            all_checkpoint_ids: set[str] = set()
+            for comparison_result in comparison_results:
+                all_checkpoint_ids.add(comparison_result.older_checkpoint_id)
+                all_checkpoint_ids.add(comparison_result.newer_checkpoint_id)
+                if comparison_result.output_feedback.result == FeedbackResult.POSITIVE:
+                    nodes_which_are_better_than_key[
+                        comparison_result.older_checkpoint_id
+                    ].add(comparison_result.newer_checkpoint_id)
+                elif (
+                    comparison_result.output_feedback.result == FeedbackResult.NEGATIVE
+                ):
+                    nodes_which_are_better_than_key[
+                        comparison_result.newer_checkpoint_id
+                    ].add(comparison_result.older_checkpoint_id)
+                else:
+                    nodes_which_are_equal_to_key[
+                        comparison_result.newer_checkpoint_id
+                    ].add(comparison_result.older_checkpoint_id)
+                    nodes_which_are_equal_to_key[
+                        comparison_result.older_checkpoint_id
+                    ].add(comparison_result.newer_checkpoint_id)
+
+            for checkpoint_id in all_checkpoint_ids:
+                pass
+
             print("Only supports checkpoints with output scores for now")
             return
 
@@ -1047,8 +1091,6 @@ class Evaluator:
             column_names=["date", "average", "num_checkpoints_used", "input_diversity"],
             markdown_file=os.path.join(self.data_dir, task_name, "system_health.md"),
         )
-
-        # If the outputs don't have scores, we can give the better output a score of 1 and the worse output a score of 0.5 and propagate that score to the older checkpoints
 
 
 _default_evaluator = Evaluator()
