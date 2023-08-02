@@ -3,6 +3,7 @@ from contextlib import contextmanager
 from enum import Enum
 import inspect
 import json
+import math
 import os
 import types
 from .recorders import (
@@ -40,7 +41,7 @@ from functools import wraps
 from dataclasses import dataclass
 import dataclasses
 import datetime
-from .utils import get_user_input, output_table
+from .utils import get_edges_n_hops, get_score_map, get_user_input, output_table
 from .classes import FeedbackResult
 from rich.console import Console
 from rich.table import Table
@@ -1013,6 +1014,8 @@ class Evaluator:
 
         # If the outputs have scores, we can calculate a rolling average
         scored_checkpoints = [c for c in checkpoints if c.output_score is not None]
+        output_scores: dict[str, OutputScore] = {}
+
         if len(scored_checkpoints) == 0:
             # If the outputs don't have scores, we can give the better output a score of 1 and the worse output a score of 0.5 and propagate that score to the older checkpoints
             comparison_results: list[ComparisonResult] = []
@@ -1025,39 +1028,33 @@ class Evaluator:
                     )
                 )
 
-            nodes_which_are_better_than_key: dict[str, set[str]] = defaultdict(
-                lambda: set()
-            )
-            nodes_which_are_equal_to_key: dict[str, set[str]] = defaultdict(
-                lambda: set()
-            )
-            all_checkpoint_ids: set[str] = set()
+            edges: dict[str, dict[str, float]] = defaultdict(lambda: dict())
             for comparison_result in comparison_results:
-                all_checkpoint_ids.add(comparison_result.older_checkpoint_id)
-                all_checkpoint_ids.add(comparison_result.newer_checkpoint_id)
                 if comparison_result.output_feedback.result == FeedbackResult.POSITIVE:
-                    nodes_which_are_better_than_key[
-                        comparison_result.older_checkpoint_id
-                    ].add(comparison_result.newer_checkpoint_id)
+                    edges[comparison_result.older_checkpoint_id][
+                        comparison_result.newer_checkpoint_id
+                    ] = 1.0
                 elif (
                     comparison_result.output_feedback.result == FeedbackResult.NEGATIVE
                 ):
-                    nodes_which_are_better_than_key[
-                        comparison_result.newer_checkpoint_id
-                    ].add(comparison_result.older_checkpoint_id)
-                else:
-                    nodes_which_are_equal_to_key[
-                        comparison_result.newer_checkpoint_id
-                    ].add(comparison_result.older_checkpoint_id)
-                    nodes_which_are_equal_to_key[
+                    edges[comparison_result.newer_checkpoint_id][
                         comparison_result.older_checkpoint_id
-                    ].add(comparison_result.newer_checkpoint_id)
-
-            for checkpoint_id in all_checkpoint_ids:
-                pass
-
-            print("Only supports checkpoints with output scores for now")
-            return
+                    ] = 1.0
+                else:
+                    edges[comparison_result.newer_checkpoint_id][
+                        comparison_result.older_checkpoint_id
+                    ] = 0.0
+                    edges[comparison_result.older_checkpoint_id][
+                        comparison_result.newer_checkpoint_id
+                    ] = 0.0
+            scores = get_score_map(edges)
+            denom = max(scores.values())  # sum(math.pow(s, 2) for s in scores.values())
+            for checkpoint_id, score in scores.items():
+                output_scores[checkpoint_id] = OutputScore(
+                    score=score / denom,
+                    message="",
+                )
+            scored_checkpoints = checkpoints
 
         rolling_averages: list[dict[str, Any]] = []
 
@@ -1071,7 +1068,15 @@ class Evaluator:
                     break
 
                 if checkpoint.created_at.date() < date_to_use:
-                    total_score += checkpoint.output_score.score  # type: ignore
+                    if checkpoint.output_score is not None:
+                        output_score: Optional[OutputScore] = checkpoint.output_score
+                    else:
+                        output_score = output_scores.get(checkpoint.checkpoint_id)
+
+                    if output_score is None:
+                        continue
+
+                    total_score += output_score.score
                     num_checkpoints_used += 1
                     input_hash_set.add(checkpoint.get_input_hash())
 

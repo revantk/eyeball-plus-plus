@@ -1,6 +1,6 @@
 import os
 from typing import Any, Optional, Sequence
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from rich.table import Table
 from rich.console import Console
 
@@ -70,3 +70,53 @@ def output_table(
 
         with open(markdown_file, "w+") as f:
             f.write(md_data)
+
+
+def get_edges_n_hops(
+    node: str, edges: dict[str, dict[str, float]], n_hops: int
+) -> list[tuple[str, float]]:
+    """Returns a list of edges that are exactly n hops of the given node and the weight of the n_hops -1 -> n_hops path to that edge."""
+    if n_hops <= 0:
+        return []
+
+    edges_n_hops = []
+    visited = set()
+
+    def _recursive_edge_traversal(
+        _node: str, _current_weight: float, _num_hops_taken: int
+    ):
+        if _num_hops_taken > n_hops:
+            return
+
+        if _num_hops_taken == n_hops:
+            edges_n_hops.append((_node, _current_weight))
+            return
+
+        if _node in visited:
+            return
+
+        visited.add(_node)
+        if _node in edges:
+            for edge, weight in edges[_node].items():
+                _recursive_edge_traversal(edge, weight, _num_hops_taken + 1)
+
+    _recursive_edge_traversal(node, 0.0, 0)
+    return edges_n_hops
+
+
+def get_score_map(
+    edges: dict[str, dict[str, float]],
+) -> dict[str, float]:
+    """Returns a dict of node to score for the given nodes and edges. Propagates scores to nodes that are 1 hop away,
+    then 2 hops away, etc. so if a graph is
+    A -> B -> C
+    then C will get the score of B + A, and B will get the score of A.
+    """
+    score_map: dict[str, float] = defaultdict(float)
+    nodes = set(edges.keys())
+    for n_hops in range(1, len(nodes) + 1):
+        for node in nodes:
+            edges_n_hops = get_edges_n_hops(node, edges, n_hops)
+            for edge, weight in edges_n_hops:
+                score_map[edge] += max(weight, 0.0)
+    return score_map
