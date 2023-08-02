@@ -1073,7 +1073,7 @@ class Evaluator:
             denom = max(scores.values())  # sum(math.pow(s, 2) for s in scores.values())
             for checkpoint_id, score in scores.items():
                 output_scores[checkpoint_id] = OutputScore(
-                    score=score / denom,
+                    score=score / denom if denom > 0 else 0.0,
                     message="",
                 )
             scored_checkpoints = checkpoints
@@ -1105,7 +1105,7 @@ class Evaluator:
             rolling_averages.append(
                 {
                     "date": date_to_use.isoformat(),
-                    "average": total_score / float(num_checkpoints_used),
+                    "rolling_average": total_score / float(num_checkpoints_used),
                     "num_checkpoints_used": num_checkpoints_used,
                     "input_diversity": len(input_hash_set),
                 }
@@ -1114,8 +1114,13 @@ class Evaluator:
 
         output_table(
             rolling_averages,
-            title="System Health (Rolling average of scores)",
-            column_names=["date", "average", "num_checkpoints_used", "input_diversity"],
+            title=f"System Health (Rolling average of scores for the last {num_samples} checkpoints)",
+            column_names=[
+                "date",
+                "rolling_average",
+                "num_checkpoints_used",
+                "input_diversity",
+            ],
             markdown_file=os.path.join(self.data_dir, task_name, "system_health.md"),
         )
 
