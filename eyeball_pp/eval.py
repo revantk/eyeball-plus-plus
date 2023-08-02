@@ -193,6 +193,26 @@ class Evaluator:
                 value=serialized_value,
             )
 
+    def record_intermediary_state(
+        self,
+        state_name: str,
+        state_value: str,
+        task_name: Optional[str] = None,
+        checkpoint_id: Optional[str] = None,
+        **config_kwargs,
+    ) -> None:
+        if self._should_record(**config_kwargs):
+            task_name, checkpoint_id = self._get_recorder_state(
+                task_name, checkpoint_id
+            )
+
+            self.recorder.record_intermediary_state(
+                task_name=task_name,
+                checkpoint_id=checkpoint_id,
+                state_name=state_name,
+                state_value=state_value,
+            )
+
     def record_output(
         self,
         value: Any,
@@ -864,6 +884,8 @@ class Evaluator:
                             input_variables=newer_checkpoint.get_input_variables(),
                             older_checkpoint_output=older_checkpoint_output,
                             newer_checkpoint_output=newer_checkpoint_output,
+                            older_checkpoint_intermediary_state=older_checkpoint.intermediary_state,
+                            newer_checkpoint_intermediary_state=newer_checkpoint.intermediary_state,
                         )
                     elif output_scorer is not None:
                         output_comparison_feedback = output_feedback_from_scores(
@@ -1065,3 +1087,4 @@ rate_recorded_examples = _default_evaluator.rate_recorded_examples
 compare_recorded_checkpoints = _default_evaluator.compare_recorded_checkpoints
 delete_checkpoints_for_input_vars = _default_evaluator.delete_checkpoints_for_input_vars
 calculate_system_health = _default_evaluator.calculate_system_health
+record_intermediary_state = _default_evaluator.record_intermediary_state

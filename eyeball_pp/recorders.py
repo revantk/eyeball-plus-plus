@@ -49,6 +49,7 @@ class Checkpoint:
     checkpoint_id: str
     input_variables: dict[str, str] = dataclasses.field(default_factory=dict)
     eval_params: dict[str, Any] = dataclasses.field(default_factory=dict)
+    intermediary_state: dict[str, str] = dataclasses.field(default_factory=dict)
     output: Optional[str] = None
     output_feedback: Optional[OutputFeedback] = None
     output_score: Optional[OutputScore] = None
@@ -84,6 +85,8 @@ class Checkpoint:
             "input_variables": self.input_variables,
             "output": self.output,
         }
+        if self.intermediary_state:
+            checkpoint_dict["intermediary_state"] = self.intermediary_state
         if self.eval_params:
             checkpoint_dict["eval_params"] = self.eval_params
         if self.output_feedback is not None:
@@ -109,6 +112,7 @@ class Checkpoint:
             if data.get("output_score") is not None
             else None,
             rerun_metadata=data.get("rerun_metadata") or {},
+            intermediary_state=data.get("intermediary_state") or {},
         )
 
     @property
@@ -131,6 +135,15 @@ class EvalRecorder(Protocol):
         task_name: str,
         checkpoint_id: str,
         output: str,
+    ) -> None:
+        ...
+
+    def record_intermediary_state(
+        self,
+        task_name: str,
+        checkpoint_id: str,
+        state_name: str,
+        state_value: str,
     ) -> None:
         ...
 
@@ -288,6 +301,17 @@ class ApiClientRecorder(EvalRecorder):
             name="output",
             value=output,
             flush=True,
+        )
+
+    def record_intermediary_state(
+        self, task_name: str, checkpoint_id: str, state_name: str, state_value: str
+    ) -> None:
+        self._record_checkpoint(
+            task_name=task_name,
+            checkpoint_id=checkpoint_id,
+            prefixes=["intermediary_state"],
+            name=state_name,
+            value=state_value,
         )
 
     def record_eval_params(
@@ -509,6 +533,14 @@ class MemoryRecorder(EvalRecorder):
             task_name=task_name, checkpoint_id=checkpoint_id
         )
         checkpoint.output = output
+
+    def record_intermediary_state(
+        self, task_name: str, checkpoint_id: str, state_name: str, state_value: str
+    ) -> None:
+        checkpoint = self._fetch_or_create_checkpoint(
+            task_name=task_name, checkpoint_id=checkpoint_id
+        )
+        checkpoint.intermediary_state[state_name] = state_value
 
     def get_latest_checkpoints(
         self, task_name: str, input_hash: str, num_checkpoints: int = 2
@@ -772,6 +804,21 @@ class FileRecorder(EvalRecorder):
             flush=True,
         )
 
+    def record_intermediary_state(
+        self,
+        task_name: str,
+        checkpoint_id: str,
+        state_name: str,
+        state_value: str,
+    ) -> None:
+        self._record_checkpoint(
+            task_name=task_name,
+            checkpoint_id=checkpoint_id,
+            prefixes=["intermediary_state"],
+            name=state_name,
+            value=state_value,
+        )
+
     def record_eval_params(
         self,
         task_name: str,
@@ -1013,6 +1060,21 @@ class DiskRecorder(EvalRecorder):
         )
         pickle.dump(self.memory_recorder, open(self.file_name, "wb"))
 
+    def record_intermediary_state(
+        self,
+        task_name: str,
+        checkpoint_id: str,
+        state_name: str,
+        state_value: str,
+    ) -> None:
+        self.memory_recorder.record_intermediary_state(
+            task_name=task_name,
+            checkpoint_id=checkpoint_id,
+            state_name=state_name,
+            state_value=state_value,
+        )
+        pickle.dump(self.memory_recorder, open(self.file_name, "wb"))
+
     def record_eval_params(
         self,
         task_name: str,
@@ -1127,6 +1189,3 @@ class DiskRecorder(EvalRecorder):
             task_name=task_name, input_hash=input_hash
         )
         pickle.dump(self.memory_recorder, open(self.file_name, "wb"))
-
-    def compute_latest_comparison_results(self, task_name: str) -> None:
-        ...

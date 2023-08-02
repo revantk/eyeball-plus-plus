@@ -1,5 +1,5 @@
 from enum import IntEnum
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -67,6 +67,8 @@ class OutputComparator(Protocol):
         input_variables: dict[str, str],
         older_checkpoint_output: str,
         newer_checkpoint_output: str,
+        older_checkpoint_intermediary_state: Optional[dict[str, str]] = None,
+        newer_checkpoint_intermediary_state: Optional[dict[str, str]] = None,
     ) -> OutputFeedback:
         ...
 

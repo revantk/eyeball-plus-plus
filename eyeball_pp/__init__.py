@@ -4,6 +4,7 @@ from .eval import (
     record_task,
     record_output,
     record_input,
+    record_intermediary_state,
     get_eval_param,
     rate_recorded_examples,
     compare_recorded_checkpoints,
@@ -37,4 +38,5 @@ __all__ = [
     "OutputScorer",
     "OutputScore",
     "calculate_system_health",
+    "record_intermediary_state",
 ]

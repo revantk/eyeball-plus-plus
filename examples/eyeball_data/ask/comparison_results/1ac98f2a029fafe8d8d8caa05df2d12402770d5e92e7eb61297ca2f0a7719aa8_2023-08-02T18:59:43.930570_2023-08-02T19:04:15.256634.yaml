@@ -1,0 +1,4 @@
+message: Same -- Both responses are equally poor. The context clearly states that
+  the fox is brown, so the correct answer to the question "What color is the fox?"
+  should be "The fox is brown." Neither response A nor B provides this information.
+result: POSITIVE

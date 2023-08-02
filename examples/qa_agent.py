@@ -17,6 +17,8 @@ class QAAgent:
         You are trying to answer a question strictly using the information provided in the context. Reply I don't know if you don't know the answer.
         """
 
+        eyeball_pp.record_intermediary_state("system_prompt", system)
+
         prompt = f"""
         Context: {context}
         Question: {question}

@@ -1,0 +1,3 @@
+message: Same -- Both responses are equally poor. The context clearly states that
+  the fox is brown, but neither response provides this information.
+result: NEUTRAL

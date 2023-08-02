@@ -1,3 +1,4 @@
+from typing import Optional
 from .classes import FeedbackResult, OutputFeedback, OutputScore
 import openai
 
@@ -27,6 +28,8 @@ def model_graded_comparator(
     input_variables: dict[str, str],
     older_checkpoint_output: str,
     newer_checkpoint_output: str,
+    older_checkpoint_intermediary_state: Optional[dict[str, str]] = None,
+    newer_checkpoint_intermediary_state: Optional[dict[str, str]] = None,
 ) -> OutputFeedback:
     input_str = "\n".join([f"{key}: {val}" for key, val in input_variables.items()])
 
