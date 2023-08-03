@@ -1026,6 +1026,7 @@ class Evaluator:
         task_name: Optional[str] = None,
     ) -> None:
         task_name = self._get_recorded_task_name(task_name=task_name)
+        output_names_to_score: set[str] = set()
 
         # calculate rolling average if we have output scores for the last num_samples checkpoints
         input_hashes = self.recorder.get_input_hashes(task_name=task_name)
@@ -1051,7 +1052,12 @@ class Evaluator:
             return
 
         # If the outputs have scores, we can calculate a rolling average
-        scored_checkpoints = [c for c in all_checkpoints if c.score is not None]
+        scored_checkpoints: list[Checkpoint] = []
+        for c in all_checkpoints:
+            scored_outputs = set(c.score.keys())
+            if len(scored_outputs) > 0:
+                scored_checkpoints.append(c)
+                output_names_to_score |= scored_outputs
 
         if len(scored_checkpoints) == 0:
             # If the outputs don't have scores, we can give the better output a score of 1 and the worse output a score of 0.5 and propagate that score to the older checkpoints
@@ -1065,41 +1071,43 @@ class Evaluator:
                     )
                 )
 
-            edges: dict[str, dict[str, float]] = defaultdict(lambda: dict())
-            for comparison_result in comparison_results:
-                if (
-                    comparison_result.feedback[OUTPUT_KEY].result
-                    == FeedbackResult.POSITIVE
-                ):
-                    edges[comparison_result.older_checkpoint_id][
-                        comparison_result.newer_checkpoint_id
-                    ] = 1.0
-                elif (
-                    comparison_result.feedback[OUTPUT_KEY].result
-                    == FeedbackResult.NEGATIVE
-                ):
-                    edges[comparison_result.newer_checkpoint_id][
-                        comparison_result.older_checkpoint_id
-                    ] = 1.0
-                else:
-                    edges[comparison_result.newer_checkpoint_id][
-                        comparison_result.older_checkpoint_id
-                    ] = 0.0
-                    edges[comparison_result.older_checkpoint_id][
-                        comparison_result.newer_checkpoint_id
-                    ] = 0.0
-            scores = get_score_map(edges)
-            denom = max(scores.values()) if len(scores) > 0 else 0.0
-            for checkpoint_id, score in scores.items():
-                # TODO: fetch checkpoint if it doesn't exist
-                # TODO: change input hash to checkpoints dict too
-                if checkpoint := all_checkpoints_dict.get(checkpoint_id):
-                    checkpoint.score = {}
-                    checkpoint.score[OUTPUT_KEY] = OutputScore(
-                        score=score / denom if denom > 0 else 0.0,
-                        message="",
-                    )
-                    scored_checkpoints.append(checkpoint)
+            for cr in comparison_results:
+                output_names_to_score |= set(cr.output_feedback.keys())
+
+            for output_name in output_names_to_score:
+                edges: dict[str, dict[str, float]] = defaultdict(lambda: dict())
+                for comparison_result in comparison_results:
+                    feedback = comparison_result.output_feedback.get(output_name)
+                    if feedback is None:
+                        continue
+
+                    if feedback.result == FeedbackResult.POSITIVE:
+                        edges[comparison_result.older_checkpoint_id][
+                            comparison_result.newer_checkpoint_id
+                        ] = 1.0
+                    elif feedback.result == FeedbackResult.NEGATIVE:
+                        edges[comparison_result.newer_checkpoint_id][
+                            comparison_result.older_checkpoint_id
+                        ] = 1.0
+                    else:
+                        edges[comparison_result.newer_checkpoint_id][
+                            comparison_result.older_checkpoint_id
+                        ] = 0.0
+                        edges[comparison_result.older_checkpoint_id][
+                            comparison_result.newer_checkpoint_id
+                        ] = 0.0
+                scores = get_score_map(edges)
+                denom = max(scores.values()) if len(scores) > 0 else 0.0
+                for checkpoint_id, score in scores.items():
+                    # TODO: fetch checkpoint if it doesn't exist
+                    # TODO: change input hash to checkpoints dict too
+                    if checkpoint := all_checkpoints_dict.get(checkpoint_id):
+                        checkpoint.output_score[output_name] = OutputScore(
+                            score=(score / denom) if denom > 0 else 0.0,
+                            message="",
+                        )
+
+        scored_checkpoints = [c for c in all_checkpoints if len(c.output_score) > 0]
 
         if len(scored_checkpoints) == 0:
             print(f"Not enough checkpoints with comparisons to calculate system health")
@@ -1110,53 +1118,82 @@ class Evaluator:
         date_to_use = datetime.datetime.utcnow().date()
         scored_checkpoints.sort(key=lambda x: x.checkpoint_id, reverse=True)
 
-        while scored_checkpoints[-1].created_at.date() <= date_to_use:
-            total_score = 0.0
-            num_checkpoints_used = 0
-            input_hash_set = set()
-            for checkpoint in scored_checkpoints:
-                if num_checkpoints_used >= num_samples:
-                    break
+        for output_name in output_names_to_score:
+            while scored_checkpoints[-1].created_at.date() <= date_to_use:
+                total_score = 0.0
+                num_checkpoints_used = 0
+                input_hash_set = set()
+                for checkpoint in scored_checkpoints:
+                    if num_checkpoints_used >= num_samples:
+                        break
 
-                if checkpoint.created_at.date() <= date_to_use:
-                    if checkpoint.score:
-                        total_score += checkpoint.score[OUTPUT_KEY].score
-                        num_checkpoints_used += 1
-                        input_hash_set.add(checkpoint.get_input_hash())
+                    if checkpoint.created_at.date() < date_to_use:
+                        if checkpoint.score is not None:
+                            total_score += checkpoint.score[output_name].score
+                            num_checkpoints_used += 1
+                            input_hash_set.add(checkpoint.get_input_hash())
 
-            rolling_averages.append(
-                {
-                    "date": date_to_use.isoformat(),
-                    "rolling_average": total_score / float(num_checkpoints_used),
-                    "num_checkpoints_used": num_checkpoints_used,
-                    "input_diversity": len(input_hash_set),
-                }
+                rolling_averages.append(
+                    {
+                        "date": date_to_use.isoformat(),
+                        "rolling_average": total_score / float(num_checkpoints_used),
+                        "num_checkpoints_used": num_checkpoints_used,
+                        "input_diversity": len(input_hash_set),
+                    }
+                )
+                date_to_use -= datetime.timedelta(days=plotting_frequency_in_days)
+
+            output_table(
+                rolling_averages,
+                title=f"{output_name} system Health (Rolling average of scores for the last {num_samples} checkpoints)",
+                column_names=[
+                    "date",
+                    "rolling_average",
+                    "num_checkpoints_used",
+                    "input_diversity",
+                ],
+                markdown_file=os.path.join(
+                    self.data_dir, task_name, "system_health.md"
+                ),
             )
-            date_to_use -= datetime.timedelta(days=plotting_frequency_in_days)
 
-        output_table(
-            rolling_averages,
-            title=f"System Health (Rolling average of scores for the last {num_samples} checkpoints)",
-            column_names=[
-                "date",
-                "rolling_average",
-                "num_checkpoints_used",
-                "input_diversity",
-            ],
-            markdown_file=os.path.join(self.data_dir, task_name, "system_health.md"),
-        )
+            input_specific_rows: list[dict[str, str]] = []
+            for input_hash, checkpoints in input_hash_to_checkpoints.items():
+                best_checkpoint: Optional[Checkpoint] = None
+                most_recent_checkpoint: Optional[Checkpoint] = None
+                worst_checkpoint: Optional[Checkpoint] = None
+                params_to_score: dict[str, Checkpoint] = {}
 
-        input_specific_rows: list[dict[str, str]] = []
-        for input_hash, checkpoints in input_hash_to_checkpoints.items():
-            best_checkpoint: Optional[Checkpoint] = None
-            worst_checkpoint: Optional[Checkpoint] = None
-            most_recent_checkpoint: Optional[Checkpoint] = None
+                for checkpoint in checkpoints:
+                    if checkpoint.score is not None and (
+                        best_checkpoint is None
+                        or checkpoint.score[output_name].score
+                        > best_checkpoint.score[output_name].score  # type: ignore
+                    ):
+                        best_checkpoint = checkpoint
+                    if checkpoint.score is not None and (
+                        most_recent_checkpoint is None
+                        or checkpoint.created_at > most_recent_checkpoint.created_at
+                    ):
+                        most_recent_checkpoint = checkpoint
 
-            for checkpoint in checkpoints:
-                if checkpoint.score is not None and (
-                    best_checkpoint is None
-                    or checkpoint.score[OUTPUT_KEY].score
-                    > best_checkpoint.score[OUTPUT_KEY].score  # type: ignore
+                row_data = dict(checkpoint.input_variables)
+                if best_checkpoint is not None and best_checkpoint.output is not None:
+                    params_str = ", ".join(
+                        f"{k}={v}" for k, v in best_checkpoint.eval_params.items()
+                    )
+                    if params_str:
+                        params_str = f"({params_str})\n"
+
+                    row_data["best_checkpoint"] = (
+                        f"Score: {best_checkpoint.score[output_name]}"
+                        + f" @{best_checkpoint.created_at.date()}\n"
+                        + params_str
+                        + best_checkpoint.output[:140]
+                    )
+                if (
+                    most_recent_checkpoint is not None
+                    and most_recent_checkpoint.output is not None
                 ):
                     best_checkpoint = checkpoint
                 if checkpoint.score is not None and (

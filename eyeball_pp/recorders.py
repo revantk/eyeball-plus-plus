@@ -885,10 +885,7 @@ class FileRecorder(EvalRecorder):
         )
 
     def record_output_score(
-        self,
-        task_name: str,
-        checkpoint_id: str,
-        score: dict[str, OutputScore]
+        self, task_name: str, checkpoint_id: str, score: dict[str, OutputScore]
     ) -> None:
         self._record_checkpoint(
             task_name=task_name,
