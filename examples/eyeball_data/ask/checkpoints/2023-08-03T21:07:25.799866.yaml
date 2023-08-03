@@ -1,5 +1,9 @@
 eval_params:
   temperature: 0.2
+feedback:
+  ___output___:
+    message: ''
+    result: POSITIVE
 input_hash: 9e2f702d1b51395033fce98439681f0f146f3593925f35c92e69174035c80387
 input_variables:
   question: '"What color is the dog?"'

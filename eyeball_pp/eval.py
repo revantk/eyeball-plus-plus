@@ -17,6 +17,7 @@ from .recorders import (
 from .comparators import model_graded_comparator, output_feedback_from_scores
 from .classes import (
     FeedbackResult,
+    MultiOutputFeedback,
     OutputComparator,
     OutputScore,
     OutputScorer,
@@ -40,10 +41,7 @@ from functools import wraps
 from dataclasses import dataclass
 import dataclasses
 import datetime
-from .utils import get_edges_n_hops, get_score_map, get_user_input, output_table
-from .classes import FeedbackResult
-from rich.console import Console
-from rich.table import Table
+from .utils import get_score_map, get_user_input, output_table
 
 GREEN = "\x1b[32m"
 ORANGE = "\x1b[33m"
@@ -472,7 +470,9 @@ class Evaluator:
         output_feedback = OutputFeedback(result=feedback_result, message=details)
 
         self.recorder.record_output_feedback(
-            task_name=task_name, checkpoint_id=checkpoint_id, feedback=output_feedback
+            task_name=task_name,
+            checkpoint_id=checkpoint_id,
+            feedback=MultiOutputFeedback({OUTPUT_KEY: output_feedback}),
         )
         return output_feedback
 
@@ -581,7 +581,7 @@ class Evaluator:
         try:
             self.mode = EvaluatorMode.RATE_EXAMPLES
             for input_hash in input_hashes_lst:
-                already_seen_outputs_to_feedback: dict[str, OutputFeedback] = {}
+                already_seen_outputs_to_feedback: dict[str, MultiOutputFeedback] = {}
                 checkpoints = self.recorder.get_latest_checkpoints(
                     task_name, input_hash, num_checkpoints=4
                 )
@@ -591,7 +591,10 @@ class Evaluator:
 
                 print(f"For the inputs:\n{checkpoints[0].get_input_var_str()}")
                 for checkpoint in checkpoints:
-                    if checkpoint.feedback is None:
+                    if checkpoint.output is None:
+                        continue
+
+                    if not checkpoint.feedback:
                         if feedback := already_seen_outputs_to_feedback.get(
                             checkpoint.output
                         ):
@@ -601,15 +604,15 @@ class Evaluator:
                                 feedback=feedback,
                             )
                         else:
-                            feedback = self.request_user_feedback(
+                            output_feedback = self.request_user_feedback(
                                 checkpoint.output or "",
                                 task_name=task_name,
                                 checkpoint_id=checkpoint.checkpoint_id,
                             )
-                            if feedback is not None:
+                            if output_feedback is not None:
                                 already_seen_outputs_to_feedback[
                                     checkpoint.output
-                                ] = feedback
+                                ] = MultiOutputFeedback({OUTPUT_KEY: output_feedback})
                     elif new_feedback := already_seen_outputs_to_feedback.get(
                         checkpoint.output
                     ):
@@ -618,7 +621,7 @@ class Evaluator:
                             != checkpoint.feedback[OUTPUT_KEY].result
                         ):
                             print(
-                                f"For output: {checkpoint.output}\nOld feedback {checkpoint.feedback} is different from new feedback {new_feedback}"
+                                f"For output: {checkpoint.output}\nOld feedback {checkpoint.feedback[OUTPUT_KEY]} is different from new feedback {new_feedback[OUTPUT_KEY]}"
                             )
                             print(f"Updating feedback to {new_feedback}")
                             self.recorder.record_output_feedback(
