@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 class ComparisonResult:
     older_checkpoint_id: str
     newer_checkpoint_id: str
-    output_feedback: OutputFeedback
+    output_feedback: dict[str, OutputFeedback]
 
     def as_dict(self):
         return {

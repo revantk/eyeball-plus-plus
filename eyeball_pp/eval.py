@@ -767,9 +767,10 @@ class Evaluator:
         task_name: Optional[str] = None,
         num_input_hashes: int = 5,
         num_checkpoints_per_input_hash: int = 3,
-        task_objective: Optional[str] = None,
+        output_objective: Optional[str] = None,
         output_comparator: Optional[OutputComparator] = None,
         output_scorer: Optional[OutputScorer] = None,
+        intermediate_objectives: Optional[dict[str, str]] = None,
         use_cached_scores: bool = True,
         use_cached_comparisons: bool = True,
     ) -> None:
@@ -778,7 +779,7 @@ class Evaluator:
         if output_comparator is None and output_scorer is None:
             output_comparator = model_graded_comparator
             assert (
-                task_objective is not None
+                output_objective is not None
             ), "Must provide an objective to compare or an output comparator"
 
         input_hashes_list = self.recorder.get_input_hashes(task_name)
@@ -829,7 +830,7 @@ class Evaluator:
 
                         assert checkpoint_to_score.output is not None
                         score = output_scorer(
-                            task_objective or "",
+                            output_objective or "",
                             checkpoint_to_score.get_input_variables(),
                             checkpoint_to_score.output,
                         )
@@ -885,18 +886,19 @@ class Evaluator:
                     ):
                         print(f"Using cached comparison result for {input_hash}")
                         should_record_comparison = False
-                        output_comparison_feedback = comparator_result.output_feedback
+                        comparison_feedback = comparator_result.output_feedback
                     elif output_comparator is not None:
-                        output_comparison_feedback = output_comparator(
-                            objective=task_objective or "",
+                        comparison_feedback = output_comparator(
                             input_variables=newer_checkpoint.get_input_variables(),
                             older_checkpoint_output=older_checkpoint_output,
                             newer_checkpoint_output=newer_checkpoint_output,
+                            objective_output=output_objective or "",
+                            objectives_intermediary_state=intermediate_objectives,
                             older_checkpoint_intermediary_state=older_checkpoint.intermediary_state,
                             newer_checkpoint_intermediary_state=newer_checkpoint.intermediary_state,
                         )
                     elif output_scorer is not None:
-                        output_comparison_feedback = output_feedback_from_scores(
+                        comparison_feedback = output_feedback_from_scores(
                             older_score=scores[older_checkpoint_id],
                             newer_score=scores[newer_checkpoint_id],
                         )
@@ -950,6 +952,7 @@ class Evaluator:
 
                     num_comparisons += 1
 
+                    output_comparison_feedback = comparison_feedback['output']
                     if output_comparison_feedback.result == FeedbackResult.NEUTRAL:
                         print(
                             f"{ORANGE}[neutral] task output is the same between checkpoints {older_checkpoint_id} {old_unique_params_str} & {newer_checkpoint_id} {new_unique_params_str} {END_CLR}"

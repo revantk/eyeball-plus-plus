@@ -32,23 +32,21 @@ class LLMRequest:
     responses: list[dict[str, str]]
 
 
-def model_graded_comparator(
+def _execute_comparator(
     objective: str,
     input_variables: dict[str, str],
-    older_checkpoint_output: str,
-    newer_checkpoint_output: str,
-    older_checkpoint_intermediary_state: Optional[dict[str, str]] = None,
-    newer_checkpoint_intermediary_state: Optional[dict[str, str]] = None,
+    older_checkpoint_response: str,
+    newer_checkpoint_response: str,
 ) -> OutputFeedback:
     system_msg = "You are an evaluator trying to grade the response of two agents based on provided JSON data. Keeping the objectives and the inputs in mind, decide which response is better and provide a reason. You always use the function provided."
     responses = [
         {
             "name": "Andrew",
-            "response": older_checkpoint_output,
+            "response": older_checkpoint_response,
         },
         {
             "name": "Barry",
-            "response": newer_checkpoint_output,
+            "response": newer_checkpoint_response,
         }
     ]
     llm_request = LLMRequest(
@@ -93,9 +91,40 @@ def model_graded_comparator(
     assert response["function_call"]["name"] == "report_decision"
 
     decision = json.loads(response["function_call"]["arguments"])["decision"]
+    reason = json.loads(response["function_call"]["arguments"])["reason"]
     if "Andrew" in decision:
-        return OutputFeedback(FeedbackResult.NEGATIVE, response)
+        return OutputFeedback(FeedbackResult.NEGATIVE, reason)
     elif "Barry" in decision:
-        return OutputFeedback(FeedbackResult.POSITIVE, response)
+        return OutputFeedback(FeedbackResult.POSITIVE, reason)
     else:
-        return OutputFeedback(FeedbackResult.NEUTRAL, response)
+        return OutputFeedback(FeedbackResult.NEUTRAL, reason)
+
+
+def model_graded_comparator(
+    input_variables: dict[str, str],
+    older_checkpoint_output: str,
+    newer_checkpoint_output: str,
+    objective_output: str,
+    objectives_intermediary_state: Optional[dict[str, str]] = None,
+    older_checkpoint_intermediary_state: Optional[dict[str, str]] = None,
+    newer_checkpoint_intermediary_state: Optional[dict[str, str]] = None,
+) -> dict[str, OutputFeedback]:
+    feedback = {}
+
+    if older_checkpoint_intermediary_state and newer_checkpoint_intermediary_state:
+        for key, value in older_checkpoint_intermediary_state.items():
+            older_int_state = value
+            newer_int_state = newer_checkpoint_intermediary_state[key]
+            feedback[key] = _execute_comparator(
+                objective=objectives_intermediary_state[key],
+                input_variables=input_variables,
+                older_checkpoint_response=older_int_state,
+                newer_checkpoint_response=newer_int_state)
+
+    feedback['output'] = _execute_comparator(
+        objective=objective_output,
+        input_variables=input_variables,
+        older_checkpoint_response=older_checkpoint_output,
+        newer_checkpoint_response=newer_checkpoint_output)
+
+    return feedback
