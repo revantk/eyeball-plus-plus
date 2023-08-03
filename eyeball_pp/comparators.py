@@ -110,10 +110,10 @@ def _execute_comparator(
 
 
 def model_graded_comparator(
+    task_objective: str,
     input_variables: dict[str, str],
     older_checkpoint_output: str,
     newer_checkpoint_output: str,
-    objective_output: str,
     objectives_intermediary_state: Optional[dict[str, str]] = None,
     older_checkpoint_intermediary_state: Optional[dict[str, str]] = None,
     newer_checkpoint_intermediary_state: Optional[dict[str, str]] = None,
@@ -124,15 +124,18 @@ def model_graded_comparator(
         for key, value in older_checkpoint_intermediary_state.items():
             older_int_state = value
             newer_int_state = newer_checkpoint_intermediary_state[key]
-            feedback[key] = _execute_comparator(
-                objective=objectives_intermediary_state[key],
-                input_variables=input_variables,
-                older_checkpoint_response=older_int_state,
-                newer_checkpoint_response=newer_int_state,
-            )
+            if objectives_intermediary_state and key in objectives_intermediary_state:
+                feedback[key] = _execute_comparator(
+                    objective=objectives_intermediary_state[key],
+                    input_variables=input_variables,
+                    older_checkpoint_response=older_int_state,
+                    newer_checkpoint_response=newer_int_state,
+                )
+            else:
+                print(f"Warning: No objective found for {key} in intermediary state")
 
     feedback[OUTPUT_KEY] = _execute_comparator(
-        objective=objective_output,
+        objective=task_objective,
         input_variables=input_variables,
         older_checkpoint_response=older_checkpoint_output,
         newer_checkpoint_response=newer_checkpoint_output,

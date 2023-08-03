@@ -36,13 +36,13 @@ class OutputFeedback:
         )
 
 
-class OutputFeedbacks(dict[str, OutputFeedback]):
+class MultiOutputFeedback(dict[str, OutputFeedback]):
     def as_dict(self):
         return {key: value.as_dict() for key, value in self.items()}
 
     @staticmethod
     def from_dict(data):
-        return OutputFeedbacks(
+        return MultiOutputFeedback(
             {key: OutputFeedback.from_dict(value) for key, value in data.items()}
         )
 
@@ -75,13 +75,13 @@ class OutputScore:
         return OutputScore(score=data["score"], message=data["message"])
 
 
-class OutputScores(dict[str, OutputScore]):
+class MultiOutputScores(dict[str, OutputScore]):
     def as_dict(self):
         return {key: value.as_dict() for key, value in self.items()}
 
     @staticmethod
     def from_dict(data):
-        return OutputScores(
+        return MultiOutputScores(
             {key: OutputScore.from_dict(value) for key, value in data.items()}
         )
 
@@ -91,10 +91,11 @@ class OutputScores(dict[str, OutputScore]):
 class OutputComparator(Protocol):
     def __call__(
         self,
-        objective: str,
+        task_objective: str,
         input_variables: dict[str, str],
         older_checkpoint_output: str,
         newer_checkpoint_output: str,
+        objectives_intermediary_state: Optional[dict[str, str]] = None,
         older_checkpoint_intermediary_state: Optional[dict[str, str]] = None,
         newer_checkpoint_intermediary_state: Optional[dict[str, str]] = None,
     ) -> dict[str, OutputFeedback]:

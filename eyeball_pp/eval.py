@@ -661,112 +661,6 @@ class Evaluator:
         )
         self.recorder.delete_checkpoints_for_input_hash(task_name, input_hash)
 
-    def compute_latest_comparison_results(self, task_name: str) -> None:
-        input_names: set[str] = set()
-        rows: list[dict[str, str]] = []
-        comparison_column_names = [
-            "latest_checkpoint",
-            "previous_checkpoint",
-            "the_checkpoint_before",
-        ]
-        # Show best checkpoint for each input
-        # Show most recent checkpoint for each input
-        # Show best performing params for each input
-
-        for input_hash in self.recorder.get_input_hashes(task_name):
-            # TODO: this is a slow operation
-            checkpoints = self.recorder.get_latest_checkpoints(
-                task_name, input_hash, num_checkpoints=len(comparison_column_names)
-            )
-            if len(checkpoints) == 0:
-                continue
-
-            checkpoint = checkpoints[0]
-            if checkpoint is None:
-                continue
-
-            row_data = {}
-            input_names.update(checkpoint.input_variables.keys())
-            for input_name, input_value in checkpoint.input_variables.items():
-                row_data[input_name] = input_value
-
-            # TODO: this is a slow operation, we should probably load all checkpoints and comparison results for an input hash in one iteration
-            comparison_results = self.recorder.get_comparison_results_for_input_hash(
-                task_name=task_name,
-                input_hash=input_hash,
-                num_results=len(comparison_column_names),
-            )
-            sorted_comparison_results = sorted(
-                comparison_results,
-                key=lambda x: x.newer_checkpoint_id,
-                reverse=True,
-            )
-            for idx, comparison_result in enumerate(sorted_comparison_results):
-                msg = str(comparison_result.feedback[OUTPUT_KEY].result)
-                new_checkpoint = self.recorder.get_checkpoint(
-                    task_name=task_name,
-                    checkpoint_id=comparison_result.newer_checkpoint_id,
-                )
-                if new_checkpoint is not None:
-                    if new_checkpoint.score is not None:
-                        msg += f" (score: {new_checkpoint.score[OUTPUT_KEY]})"
-                    eval_params_str = ", ".join(
-                        f"{k}={v}" for k, v in new_checkpoint.eval_params.items()
-                    )
-                    if eval_params_str:
-                        msg += f" ({eval_params_str})"
-                row_data[comparison_column_names[idx]] = msg
-
-            for idx in range(len(comparison_column_names)):
-                if (
-                    comparison_column_names[idx] not in row_data
-                    and idx < len(checkpoints)
-                    and (checkpoint := checkpoints[idx]).score is not None
-                ):
-                    msg = (
-                        f"score: **{checkpoint.score[OUTPUT_KEY].score: .2f}**, "
-                        f"{checkpoint.score[OUTPUT_KEY].message}"
-                    )
-                    eval_params_str = ", ".join(
-                        f"{k}={v}" for k, v in checkpoint.eval_params.items()
-                    )
-                    if eval_params_str:
-                        msg += f" ({eval_params_str})"
-                    row_data[comparison_column_names[idx]] = msg
-
-            rows.append(row_data)
-
-        md_data = []
-        table = Table(title="Comparison Results")
-
-        if len(rows) > 0:
-            column_names = sorted(list(input_names)) + comparison_column_names
-            for column_name in column_names:
-                table.add_column(column_name, justify="left")
-
-            md_data.append("| " + " | ".join(column_names) + " |")
-            md_data.append("| " + " | ".join(["---"] * len(column_names)) + " |")
-
-            for row in rows:
-                row_tuple = tuple(
-                    row.get(column_name, "") for column_name in column_names
-                )
-                table.add_row(*row_tuple)
-                md_data.append("| " + " | ".join(row_tuple) + " |")
-
-            task_data_dir = os.path.join(self.data_dir, task_name)
-            if not os.path.exists(task_data_dir):
-                os.makedirs(task_data_dir)
-
-            with open(
-                os.path.join(task_data_dir, "benchmark.md"),
-                "w+",
-            ) as f:
-                f.write("\n".join(md_data))
-
-            console = Console()
-            console.print(table)
-
     def compare_recorded_checkpoints(
         self,
         task_name: Optional[str] = None,
@@ -823,9 +717,9 @@ class Evaluator:
                     print(f"\nInput #{idx} - Scoring {len(checkpoint_ids)} checkpoints")
                     for checkpoint_id in checkpoint_ids:
                         checkpoint_to_score = checkpoints[checkpoint_id]
-                        if use_cached_scores and checkpoint_to_score.score:
+                        if use_cached_scores and checkpoint_to_score.scores:
                             print(
-                                f"Using cached score for {checkpoint_id}: {checkpoint_to_score.score}"
+                                f"Using cached score for {checkpoint_id}: {checkpoint_to_score.scores}"
                             )
 
                         assert checkpoint_to_score.output is not None
@@ -840,7 +734,7 @@ class Evaluator:
                             checkpoint_id=checkpoint_id,
                             score=scores_dict,
                         )
-                        checkpoint_to_score.score = scores_dict
+                        checkpoint_to_score.scores = scores_dict
                         print(f"Scored {checkpoint_id}: {scores_dict}")
 
                 if len(checkpoint_ids) < 2:
@@ -900,8 +794,8 @@ class Evaluator:
                         )
                     elif output_scorer is not None:
                         comparison_feedback = output_feedback_from_scores(
-                            older_scores=older_checkpoint.score,
-                            newer_scores=newer_checkpoint.score,
+                            older_scores=older_checkpoint.scores,
+                            newer_scores=newer_checkpoint.scores,
                         )
                     else:
                         raise ValueError(
@@ -1052,7 +946,7 @@ class Evaluator:
         # If the outputs have scores, we can calculate a rolling average
         scored_checkpoints: list[Checkpoint] = []
         for c in all_checkpoints:
-            scored_outputs = set(c.score.keys())
+            scored_outputs = set(c.scores.keys())
             if len(scored_outputs) > 0:
                 scored_checkpoints.append(c)
                 output_names_to_score |= scored_outputs
@@ -1100,12 +994,12 @@ class Evaluator:
                     # TODO: fetch checkpoint if it doesn't exist
                     # TODO: change input hash to checkpoints dict too
                     if checkpoint := all_checkpoints_dict.get(checkpoint_id):
-                        checkpoint.score[output_name] = OutputScore(
+                        checkpoint.scores[output_name] = OutputScore(
                             score=(score / denom) if denom > 0 else 0.0,
                             message="",
                         )
 
-        scored_checkpoints = [c for c in all_checkpoints if len(c.score) > 0]
+        scored_checkpoints = [c for c in all_checkpoints if len(c.scores) > 0]
 
         if len(scored_checkpoints) == 0:
             print(f"Not enough checkpoints with comparisons to calculate system health")
@@ -1125,9 +1019,9 @@ class Evaluator:
                     if num_checkpoints_used >= num_samples:
                         break
 
-                    if checkpoint.created_at.date() < date_to_use:
-                        if checkpoint.score is not None:
-                            total_score += checkpoint.score[output_name].score
+                    if checkpoint.created_at.date() <= date_to_use:
+                        if checkpoint.scores is not None:
+                            total_score += checkpoint.scores[output_name].score
                             num_checkpoints_used += 1
                             input_hash_set.add(checkpoint.get_input_hash())
 
@@ -1162,13 +1056,13 @@ class Evaluator:
                 worst_checkpoint: Optional[Checkpoint] = None
 
                 for checkpoint in checkpoints:
-                    if output_name not in checkpoint.score:
+                    if output_name not in checkpoint.scores:
                         continue
 
                     if (
                         best_checkpoint is None
-                        or checkpoint.score[output_name].score
-                        > best_checkpoint.score[output_name].score
+                        or checkpoint.scores[output_name].score
+                        > best_checkpoint.scores[output_name].score
                     ):
                         best_checkpoint = checkpoint
                     if (
@@ -1178,8 +1072,8 @@ class Evaluator:
                         most_recent_checkpoint = checkpoint
                     if (
                         worst_checkpoint is None
-                        or checkpoint.score[output_name].score
-                        < worst_checkpoint.score[output_name].score
+                        or checkpoint.scores[output_name].score
+                        < worst_checkpoint.scores[output_name].score
                     ):
                         worst_checkpoint = checkpoint
 

@@ -12,7 +12,7 @@ import dataclasses
 import requests
 
 from .utils import LruCache
-from .classes import OutputFeedback, OutputScore
+from .classes import OutputFeedback, OutputScore, MultiOutputScores
 import logging
 
 logger = logging.getLogger(__name__)
@@ -52,7 +52,7 @@ class Checkpoint:
     intermediary_state: dict[str, str] = dataclasses.field(default_factory=dict)
     output: Optional[str] = None
     feedback: dict[str, OutputFeedback] = dataclasses.field(default_factory=dict)
-    score: dict[str, OutputScore] = dataclasses.field(default_factory=dict)
+    scores: MultiOutputScores = dataclasses.field(default_factory=MultiOutputScores)
     rerun_metadata: dict[str, str] = dataclasses.field(default_factory=dict)
 
     def get_input_variables(self) -> dict[str, str]:
@@ -91,8 +91,8 @@ class Checkpoint:
             checkpoint_dict["eval_params"] = self.eval_params
         if self.feedback is not None:
             checkpoint_dict["feedback"] = self.feedback
-        if self.score is not None:
-            checkpoint_dict["score"] = self.score
+        if self.scores is not None:
+            checkpoint_dict["score"] = self.scores
         if self.rerun_metadata:
             checkpoint_dict["rerun_metadata"] = self.rerun_metadata
 
@@ -133,8 +133,8 @@ class Checkpoint:
             msg = f"@ {time_ago.seconds} seconds ago"
         msg += "\n"
 
-        if output_name in self.score:
-            output_score = self.score[output_name]
+        if output_name in self.scores:
+            output_score = self.scores[output_name]
             msg += f"score: {output_score.score:.2f}"
             if output_score.message:
                 msg += f" ({output_score.message})"
@@ -665,7 +665,7 @@ class MemoryRecorder(EvalRecorder):
         checkpoint = self._fetch_or_create_checkpoint(
             task_name=task_name, checkpoint_id=checkpoint_id
         )
-        checkpoint.score = score
+        checkpoint.scores = score
 
     def get_comparison_result(
         self,
@@ -910,7 +910,7 @@ class FileRecorder(EvalRecorder):
             if "output_feedback" in yaml_dict
             else None
         )
-        checkpoint.score = (
+        checkpoint.scores = (
             OutputScore.from_dict(yaml_dict.get("score"))
             if "output_score" in yaml_dict
             else None
