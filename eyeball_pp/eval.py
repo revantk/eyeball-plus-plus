@@ -1105,7 +1105,7 @@ class Evaluator:
                             message="",
                         )
 
-        scored_checkpoints = [c for c in all_checkpoints if len(c.output_score) > 0]
+        scored_checkpoints = [c for c in all_checkpoints if len(c.score) > 0]
 
         if len(scored_checkpoints) == 0:
             print(f"Not enough checkpoints with comparisons to calculate system health")

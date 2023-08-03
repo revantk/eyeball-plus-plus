@@ -28,7 +28,7 @@ class ComparisonResult:
         return {
             "older_checkpoint_id": self.older_checkpoint_id,
             "newer_checkpoint_id": self.newer_checkpoint_id,
-            "feedback": self.feedback,
+            "feedback": {k: v.as_dict() for k, v in self.feedback.items()},
         }
 
 
@@ -105,12 +105,14 @@ class Checkpoint:
             input_variables=data["input_variables"],
             eval_params=data.get("eval_params") or {},
             output=data["output"],
-            output_feedback=OutputFeedback.from_dict(data["feedback"])
+            feedback={
+                k: OutputFeedback.from_dict(v) for k, v in data["feedback"].items()
+            }
             if data.get("feedback") is not None
-            else None,
-            output_score=OutputScore.from_dict(data["score"])
+            else {},
+            score={k: OutputScore.from_dict(v) for k, v in data["score"].items()}
             if data.get("score") is not None
-            else None,
+            else {},
             rerun_metadata=data.get("rerun_metadata") or {},
             intermediary_state=data.get("intermediary_state") or {},
         )
@@ -119,8 +121,7 @@ class Checkpoint:
     def created_at(self) -> datetime:
         return datetime.fromisoformat(self.checkpoint_id)
 
-    @property
-    def output_score_repr(self) -> str:
+    def output_score_repr(self, output_name: str) -> str:
         time_ago = datetime.now() - self.created_at
         if time_ago.days > 0:
             msg = f"@ {time_ago.days} days ago"
@@ -132,10 +133,11 @@ class Checkpoint:
             msg = f"@ {time_ago.seconds} seconds ago"
         msg += "\n"
 
-        if self.output_score is not None:
-            msg += f"score: {self.output_score.score:.2f}"
-            if self.output_score.message:
-                msg += f" ({self.output_score.message})"
+        if output_name in self.score:
+            output_score = self.score[output_name]
+            msg += f"score: {output_score.score:.2f}"
+            if output_score.message:
+                msg += f" ({output_score.message})"
             msg += "\n"
 
         params_str = ", ".join(f"{k}={v}" for k, v in self.eval_params.items())
@@ -187,7 +189,7 @@ class EvalRecorder(Protocol):
         self,
         task_name: str,
         checkpoint_id: str,
-        feedback: OutputFeedback,
+        feedback: dict[str, OutputFeedback],
     ) -> None:
         ...
 
@@ -630,7 +632,7 @@ class MemoryRecorder(EvalRecorder):
         self,
         task_name: str,
         checkpoint_id: str,
-        feedback: OutputFeedback,
+        feedback: dict[str, OutputFeedback],
     ) -> None:
         checkpoint = self._fetch_or_create_checkpoint(
             task_name=task_name, checkpoint_id=checkpoint_id
@@ -873,14 +875,14 @@ class FileRecorder(EvalRecorder):
         self,
         task_name: str,
         checkpoint_id: str,
-        feedback: OutputFeedback,
+        feedback: dict[str, OutputFeedback],
     ) -> None:
         self._record_checkpoint(
             task_name=task_name,
             checkpoint_id=checkpoint_id,
             prefixes=[],
             name="feedback",
-            value=feedback.as_dict(),
+            value={k: v.as_dict() for k, v in feedback.items()},
             flush=True,
         )
 

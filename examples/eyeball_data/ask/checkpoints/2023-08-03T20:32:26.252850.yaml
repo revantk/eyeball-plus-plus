@@ -1,0 +1,6 @@
+input_hash: ad86cc22849bf40de9660323f3a2f42eac63c9e409e6af27ad242ada5743c845
+input_variables:
+  question: '"What color is the fox?"'
+intermediary_state:
+  context: The quick brown fox jumps over the lazy dog
+output: '"I don''t know."'

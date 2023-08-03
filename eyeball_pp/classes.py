@@ -36,6 +36,17 @@ class OutputFeedback:
         )
 
 
+class OutputFeedbacks(dict[str, OutputFeedback]):
+    def as_dict(self):
+        return {key: value.as_dict() for key, value in self.items()}
+
+    @staticmethod
+    def from_dict(data):
+        return OutputFeedbacks(
+            {key: OutputFeedback.from_dict(value) for key, value in data.items()}
+        )
+
+
 @dataclass
 class OutputScore:
     score: float
@@ -62,6 +73,17 @@ class OutputScore:
     @staticmethod
     def from_dict(data):
         return OutputScore(score=data["score"], message=data["message"])
+
+
+class OutputScores(dict[str, OutputScore]):
+    def as_dict(self):
+        return {key: value.as_dict() for key, value in self.items()}
+
+    @staticmethod
+    def from_dict(data):
+        return OutputScores(
+            {key: OutputScore.from_dict(value) for key, value in data.items()}
+        )
 
 
 # Compare the output of two checkpoints for a given objective
