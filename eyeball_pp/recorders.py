@@ -255,7 +255,7 @@ class ApiClientRecorder(EvalRecorder):
     def __init__(self, api_key: str, api_url: Optional[str] = None) -> None:
         self.api_key = api_key
         if api_url is None:
-            self.url = "https://eyeball.tark.ai/"
+            self.url = "https://eyeball-dot-robust-ai.uc.r.appspot.com"
         else:
             self.url = api_url
         self.checkpoint_dicts: LruCache = LruCache(max_size=100)
