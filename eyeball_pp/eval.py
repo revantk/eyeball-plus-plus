@@ -481,6 +481,8 @@ class Evaluator:
         *eval_params_list: dict[str, Any],
         task_name: Optional[str] = None,
         input_hashes: Optional[list[str]] = None,
+        limit: Optional[int] = None,
+        randomize: Optional[bool] = False,
     ) -> Iterable[dict[str, Any]]:
         if task_name is None:
             task_names = self.recorder.get_task_names()
@@ -495,6 +497,12 @@ class Evaluator:
 
         if input_hashes is None or len(input_hashes) == 0:
             input_hashes = self.recorder.get_input_hashes(task_name=task_name)
+
+        if randomize and input_hashes:
+            random.shuffle(input_hashes)
+
+        if limit is not None:
+            input_hashes = input_hashes[:limit]
 
         try:
             self.mode = EvaluatorMode.RERUN_EXAMPLES
