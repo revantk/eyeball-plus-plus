@@ -1,4 +1,0 @@
-message: Same -- Both responses are equally good. They both correctly state that the
-  color of the dog is not mentioned in the context. The context only specifies that
-  the dog is not brown, but does not provide any other color for the dog.
-result: POSITIVE

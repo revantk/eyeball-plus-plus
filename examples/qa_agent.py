@@ -45,7 +45,7 @@ class QAAgent:
 
 
 if __name__ == "__main__":
-    eyeball_pp.set_config(dir_path="examples", record_in_memory=True)
+    eyeball_pp.set_config(dir_path="examples")
     agent = QAAgent()
     agent.ask(
         question="What color is the fox?",
@@ -60,6 +60,9 @@ if __name__ == "__main__":
         agent.ask(input_vars["question"])
 
     eyeball_pp.compare_recorded_checkpoints(
-        task_objective="This agent tries to answer questions given a context. Verify that the agent answers the question correctly and that the answer is only based on the context.",
+        output_objective="This agent tries to answer questions given a context. Verify that the agent answers the question correctly and that the answer is only based on the context.",
+        intermediate_objectives={
+            "context": "The context should be relevant to the question",
+        },
         num_checkpoints_per_input_hash=4,
     )

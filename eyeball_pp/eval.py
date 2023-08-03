@@ -581,7 +581,7 @@ class Evaluator:
         try:
             self.mode = EvaluatorMode.RATE_EXAMPLES
             for input_hash in input_hashes_lst:
-                already_seen_outputs_to_feedback: dict[str:OutputFeedback] = {}
+                already_seen_outputs_to_feedback: dict[str, OutputFeedback] = {}
                 checkpoints = self.recorder.get_latest_checkpoints(
                     task_name, input_hash, num_checkpoints=4
                 )
@@ -615,7 +615,7 @@ class Evaluator:
                     ):
                         if (
                             new_feedback[OUTPUT_KEY].result
-                            != checkpoint.feedback.result
+                            != checkpoint.feedback[OUTPUT_KEY].result
                         ):
                             print(
                                 f"For output: {checkpoint.output}\nOld feedback {checkpoint.feedback} is different from new feedback {new_feedback}"
@@ -818,33 +818,30 @@ class Evaluator:
                 if len(checkpoint_ids) == 0:
                     continue
 
-                scores: dict[str, OutputScore] = {}
                 if output_scorer is not None:
+                    # TODO: change output scorer to score multiple output types
                     print(f"\nInput #{idx} - Scoring {len(checkpoint_ids)} checkpoints")
                     for checkpoint_id in checkpoint_ids:
                         checkpoint_to_score = checkpoints[checkpoint_id]
-                        if use_cached_scores and checkpoint_to_score.score is not None:
+                        if use_cached_scores and checkpoint_to_score.score:
                             print(
-                                f"Using cached score for {checkpoint_id}: {checkpoint_to_score.score[OUTPUT_KEY]}"
+                                f"Using cached score for {checkpoint_id}: {checkpoint_to_score.score}"
                             )
-                            scores[checkpoint_id] = checkpoint_to_score.score[
-                                OUTPUT_KEY
-                            ]
-                            continue
 
                         assert checkpoint_to_score.output is not None
-                        score = output_scorer(
+                        scores_dict = output_scorer(
                             output_objective or "",
                             checkpoint_to_score.get_input_variables(),
                             checkpoint_to_score.output,
+                            checkpoint_to_score.intermediary_state,
                         )
                         self.recorder.record_output_score(
                             task_name=task_name,
                             checkpoint_id=checkpoint_id,
-                            score=score,
+                            score=scores_dict,
                         )
-                        scores[checkpoint_id] = score
-                        print(f"Scored {checkpoint_id}: {score}")
+                        checkpoint_to_score.score = scores_dict
+                        print(f"Scored {checkpoint_id}: {scores_dict}")
 
                 if len(checkpoint_ids) < 2:
                     continue
@@ -903,8 +900,8 @@ class Evaluator:
                         )
                     elif output_scorer is not None:
                         comparison_feedback = output_feedback_from_scores(
-                            older_score=scores[older_checkpoint_id],
-                            newer_score=scores[newer_checkpoint_id],
+                            older_scores=older_checkpoint.score,
+                            newer_scores=newer_checkpoint.score,
                         )
                     else:
                         raise ValueError(
@@ -956,6 +953,7 @@ class Evaluator:
 
                     num_comparisons += 1
 
+                    print(f"comparison_feedback: {comparison_feedback}")
                     output_comparison_feedback = comparison_feedback[OUTPUT_KEY]
                     if output_comparison_feedback.result == FeedbackResult.NEUTRAL:
                         print(
@@ -1072,12 +1070,12 @@ class Evaluator:
                 )
 
             for cr in comparison_results:
-                output_names_to_score |= set(cr.output_feedback.keys())
+                output_names_to_score |= set(cr.feedback.keys())
 
             for output_name in output_names_to_score:
                 edges: dict[str, dict[str, float]] = defaultdict(lambda: dict())
                 for comparison_result in comparison_results:
-                    feedback = comparison_result.output_feedback.get(output_name)
+                    feedback = comparison_result.feedback.get(output_name)
                     if feedback is None:
                         continue
 
@@ -1102,7 +1100,7 @@ class Evaluator:
                     # TODO: fetch checkpoint if it doesn't exist
                     # TODO: change input hash to checkpoints dict too
                     if checkpoint := all_checkpoints_dict.get(checkpoint_id):
-                        checkpoint.output_score[output_name] = OutputScore(
+                        checkpoint.score[output_name] = OutputScore(
                             score=(score / denom) if denom > 0 else 0.0,
                             message="",
                         )
@@ -1145,7 +1143,7 @@ class Evaluator:
 
             output_table(
                 rolling_averages,
-                title=f"{output_name} system Health (Rolling average of scores for the last {num_samples} checkpoints)",
+                title=f"{output_name} system health (Rolling average of scores for the last {num_samples} checkpoints)",
                 column_names=[
                     "date",
                     "rolling_average",
@@ -1162,65 +1160,42 @@ class Evaluator:
                 best_checkpoint: Optional[Checkpoint] = None
                 most_recent_checkpoint: Optional[Checkpoint] = None
                 worst_checkpoint: Optional[Checkpoint] = None
-                params_to_score: dict[str, Checkpoint] = {}
 
                 for checkpoint in checkpoints:
-                    if checkpoint.score is not None and (
+                    if output_name not in checkpoint.score:
+                        continue
+
+                    if (
                         best_checkpoint is None
                         or checkpoint.score[output_name].score
-                        > best_checkpoint.score[output_name].score  # type: ignore
+                        > best_checkpoint.score[output_name].score
                     ):
                         best_checkpoint = checkpoint
-                    if checkpoint.score is not None and (
+                    if (
                         most_recent_checkpoint is None
                         or checkpoint.created_at > most_recent_checkpoint.created_at
                     ):
                         most_recent_checkpoint = checkpoint
+                    if (
+                        worst_checkpoint is None
+                        or checkpoint.score[output_name].score
+                        < worst_checkpoint.score[output_name].score
+                    ):
+                        worst_checkpoint = checkpoint
 
                 row_data = dict(checkpoint.input_variables)
-                if best_checkpoint is not None and best_checkpoint.output is not None:
-                    params_str = ", ".join(
-                        f"{k}={v}" for k, v in best_checkpoint.eval_params.items()
-                    )
-                    if params_str:
-                        params_str = f"({params_str})\n"
-
-                    row_data["best_checkpoint"] = (
-                        f"Score: {best_checkpoint.score[output_name]}"
-                        + f" @{best_checkpoint.created_at.date()}\n"
-                        + params_str
-                        + best_checkpoint.output[:140]
-                    )
-                if (
-                    most_recent_checkpoint is not None
-                    and most_recent_checkpoint.output is not None
-                ):
-                    best_checkpoint = checkpoint
-                if checkpoint.score is not None and (
-                    most_recent_checkpoint is None
-                    or checkpoint.created_at > most_recent_checkpoint.created_at
-                ):
-                    most_recent_checkpoint = checkpoint
-                if checkpoint.output_score is not None and (
-                    worst_checkpoint is None
-                    or checkpoint.output_score.score
-                    < worst_checkpoint.output_score.score  # type: ignore
-                ):
-                    worst_checkpoint = checkpoint
-
-            row_data = dict(checkpoint.input_variables)
-            if best_checkpoint is not None:
-                row_data["best_checkpoint"] = best_checkpoint.output_score_repr
-            if most_recent_checkpoint is not None:
-                row_data[
-                    "most_recent_checkpoint"
-                ] = most_recent_checkpoint.output_score_repr
-            if worst_checkpoint is not None:
-                row_data["worst_checkpoint"] = worst_checkpoint.output_score_repr
+                if best_checkpoint is not None:
+                    row_data["best_checkpoint"] = best_checkpoint.output_score_repr
+                if most_recent_checkpoint is not None:
+                    row_data[
+                        "most_recent_checkpoint"
+                    ] = most_recent_checkpoint.output_score_repr
+                if worst_checkpoint is not None:
+                    row_data["worst_checkpoint"] = worst_checkpoint.output_score_repr
 
             input_specific_rows.append(row_data)
 
-        output_table(input_specific_rows, title="Per input stats")
+        output_table(input_specific_rows, title=f"{output_name} per input stats")
 
 
 _default_evaluator = Evaluator()

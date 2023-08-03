@@ -1,4 +1,0 @@
-message: "Response A is better than Response B. The context clearly states that the\
-  \ fox is brown. Therefore, the answer to the question \"What color is the fox?\"\
-  \ is \"brown.\" \n\nSo, the answer is: Yes."
-result: NEGATIVE

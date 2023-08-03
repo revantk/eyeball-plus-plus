@@ -75,7 +75,7 @@ class OutputComparator(Protocol):
         newer_checkpoint_output: str,
         older_checkpoint_intermediary_state: Optional[dict[str, str]] = None,
         newer_checkpoint_intermediary_state: Optional[dict[str, str]] = None,
-    ) -> OutputFeedback:
+    ) -> dict[str, OutputFeedback]:
         ...
 
 
@@ -83,6 +83,10 @@ class OutputComparator(Protocol):
 # The scorer should return a float with a higher value indicating a better output
 class OutputScorer(Protocol):
     def __call__(
-        self, objective: str, input_variables: dict[str, str], output: str
-    ) -> OutputScore:
+        self,
+        objective: str,
+        input_variables: dict[str, str],
+        output: str,
+        intermediary_state: Optional[dict[str, str]] = None,
+    ) -> dict[str, OutputScore]:
         ...

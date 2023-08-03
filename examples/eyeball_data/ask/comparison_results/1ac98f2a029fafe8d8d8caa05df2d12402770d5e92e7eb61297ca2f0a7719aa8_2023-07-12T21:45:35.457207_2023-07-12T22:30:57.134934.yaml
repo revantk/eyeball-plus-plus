@@ -1,4 +1,0 @@
-message: Same -- Both responses are equally good. However, both responses are incorrect
-  as the context clearly states that the fox is brown. The agent should have answered
-  "brown".
-result: NEUTRAL

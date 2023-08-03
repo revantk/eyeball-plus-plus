@@ -1,5 +1,0 @@
-input_hash: 1ac98f2a029fafe8d8d8caa05df2d12402770d5e92e7eb61297ca2f0a7719aa8
-input_variables:
-  context: '"The quick brown fox jumps over the lazy dog"'
-  question: '"What color is the fox?"'
-output: '"I don''t know."'

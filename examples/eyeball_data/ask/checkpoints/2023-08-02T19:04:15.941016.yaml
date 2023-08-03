@@ -1,9 +1,0 @@
-input_hash: fbd3935023057ad8191971ef3d491d4aabb1b12ae244ed732568a4213609022b
-input_variables:
-  context: '"The lazy dog which is not brown jumps over the quick brown fox"'
-  question: '"What color is the dog?"'
-intermediary_state:
-  system_prompt: "\n        You are trying to answer a question strictly using the\
-    \ information provided in the context. Reply I don't know if you don't know the\
-    \ answer.\n        "
-output: '"I don''t know."'

@@ -51,8 +51,8 @@ class Checkpoint:
     eval_params: dict[str, Any] = dataclasses.field(default_factory=dict)
     intermediary_state: dict[str, str] = dataclasses.field(default_factory=dict)
     output: Optional[str] = None
-    feedback: Optional[dict[str, OutputFeedback]] = None
-    score: Optional[dict[str, OutputScore]] = None
+    feedback: dict[str, OutputFeedback] = dataclasses.field(default_factory=dict)
+    score: dict[str, OutputScore] = dataclasses.field(default_factory=dict)
     rerun_metadata: dict[str, str] = dataclasses.field(default_factory=dict)
 
     def get_input_variables(self) -> dict[str, str]:
