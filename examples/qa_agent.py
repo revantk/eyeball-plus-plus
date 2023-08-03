@@ -44,24 +44,24 @@ class QAAgent:
 
 if __name__ == "__main__":
     eyeball_pp.set_config(dir_path="examples")
+    eyeball_pp.calculate_system_health()
+    # agent = QAAgent()
+    # agent.ask(
+    #     context="The quick brown fox jumps over the lazy dog",
+    #     question="What color is the fox?",
+    # )
 
-    agent = QAAgent()
-    agent.ask(
-        context="The quick brown fox jumps over the lazy dog",
-        question="What color is the fox?",
-    )
+    # agent.ask(
+    #     context="The lazy dog which is not brown jumps over the quick brown fox",
+    #     question="What color is the dog?",
+    # )
 
-    agent.ask(
-        context="The lazy dog which is not brown jumps over the quick brown fox",
-        question="What color is the dog?",
-    )
+    # for input_vars in eyeball_pp.rerun_recorded_examples(
+    #     {"model": "gpt-4", "temperature": 0.7}
+    # ):
+    #     agent.ask(input_vars["context"], input_vars["question"])
 
-    for input_vars in eyeball_pp.rerun_recorded_examples(
-        {"model": "gpt-4", "temperature": 0.7}
-    ):
-        agent.ask(input_vars["context"], input_vars["question"])
-
-    eyeball_pp.compare_recorded_checkpoints(
-        task_objective="This agent tries to answer questions given a context. Verify that the agent answers the question correctly and that the answer is only based on the context.",
-        num_checkpoints_per_input_hash=4,
-    )
+    # eyeball_pp.compare_recorded_checkpoints(
+    #     task_objective="This agent tries to answer questions given a context. Verify that the agent answers the question correctly and that the answer is only based on the context.",
+    #     num_checkpoints_per_input_hash=4,
+    # )

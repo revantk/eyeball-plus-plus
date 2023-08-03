@@ -42,7 +42,6 @@ def output_table(
             for column_name in row.keys():
                 if column_name not in column_names:
                     column_names.append(column_name)
-        column_names.sort()
 
     table = Table(title=title)
     md_data = f"| {' | '.join(column_names)} |\n"

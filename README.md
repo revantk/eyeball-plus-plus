@@ -7,7 +7,7 @@ This framework helps you answer questions like: "Which llm is the best for my sp
 
 Your task can be arbitrary, the framework only cares about initial inputs and final outputs.
 
-If you've been eyeballing how well your changes are working, this framework should fit right in and help you evaluate your task in a more methodical manner.
+If you've been eyeballing how well your changes are working, this framework should fit right in and help you evaluate your task in a more methodical manner WITHOUT you having to become methodical.
 
 # Installation
 eyeball_pp is a python library which can be installed via pip 

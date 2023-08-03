@@ -48,7 +48,10 @@ class OutputScore:
         return isinstance(__value, OutputScore) and self.score > __value.score
 
     def __str__(self) -> str:
-        return f"{self.score:.2f} ({self.message})"
+        if self.message:
+            return f"{self.score:.2f} ({self.message})"
+        else:
+            return f"{self.score: .2f}"
 
     def as_dict(self):
         return {"score": self.score, "message": self.message}
