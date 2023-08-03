@@ -76,6 +76,7 @@ class EvaluatorConfig:
     dir_path: str = "."
     api_key: Optional[str] = None
     api_url: Optional[str] = None
+    record_in_memory: bool = False
 
     @staticmethod
     def _merge(original_config: "EvaluatorConfig", **kwargs) -> "EvaluatorConfig":
@@ -120,11 +121,14 @@ class Evaluator:
     def set_config(self, **config_kwargs) -> None:
         self.config = EvaluatorConfig._merge(self.config, **config_kwargs)
         self.data_dir = os.path.join(self.config.dir_path, "eyeball_data")
-        if self.config.api_key is not None:
-            self.recorder: EvalRecorder = ApiClientRecorder(
+
+        if self.config.record_in_memory:
+            self.recorder: EvalRecorder = MemoryRecorder()
+        elif self.config.api_key is not None:
+            self.recorder = ApiClientRecorder(
                 api_key=self.config.api_key, api_url=self.config.api_url
             )
-        elif self.running_in_notebook or not self.config.sample_rate:
+        elif self.running_in_notebook or self.config.sample_rate == 0:
             self.recorder = MemoryRecorder()
         else:
             self.recorder = FileRecorder(self.data_dir)
@@ -1002,7 +1006,7 @@ class Evaluator:
                     params = "default"
                 print(f"{params}: {num_successes}/{num_comparisons} successes")
 
-            self.compute_latest_comparison_results(task_name)
+            # self.compute_latest_comparison_results(task_name)
             self.calculate_system_health(task_name=task_name)
 
         finally:
@@ -1074,25 +1078,27 @@ class Evaluator:
                         comparison_result.newer_checkpoint_id
                     ] = 0.0
             scores = get_score_map(edges)
-            denom = max(scores.values())  # sum(math.pow(s, 2) for s in scores.values())
+            denom = max(scores.values()) if len(scores) > 0 else 0.0
             for checkpoint_id, score in scores.items():
                 # TODO: fetch checkpoint if it doesn't exist
                 # TODO: change input hash to checkpoints dict too
                 if checkpoint := all_checkpoints_dict.get(checkpoint_id):
                     checkpoint.output_score = OutputScore(
-                        score=score / denom if denom > 0 else 0.0,
+                        score=(score / denom) if denom > 0 else 0.0,
                         message="",
                     )
                     scored_checkpoints.append(checkpoint)
 
         if len(scored_checkpoints) == 0:
+            print(f"Not enough checkpoints with comparisons to calculate system health")
             return
 
         rolling_averages: list[dict[str, Any]] = []
 
         date_to_use = datetime.datetime.utcnow().date()
         scored_checkpoints.sort(key=lambda x: x.checkpoint_id, reverse=True)
-        while scored_checkpoints[-1].created_at.date() < date_to_use:
+
+        while scored_checkpoints[-1].created_at.date() <= date_to_use:
             total_score = 0.0
             num_checkpoints_used = 0
             input_hash_set = set()
@@ -1100,7 +1106,7 @@ class Evaluator:
                 if num_checkpoints_used >= num_samples:
                     break
 
-                if checkpoint.created_at.date() < date_to_use:
+                if checkpoint.created_at.date() <= date_to_use:
                     if checkpoint.output_score is not None:
                         total_score += checkpoint.output_score.score
                         num_checkpoints_used += 1
@@ -1131,8 +1137,8 @@ class Evaluator:
         input_specific_rows: list[dict[str, str]] = []
         for input_hash, checkpoints in input_hash_to_checkpoints.items():
             best_checkpoint: Optional[Checkpoint] = None
+            worst_checkpoint: Optional[Checkpoint] = None
             most_recent_checkpoint: Optional[Checkpoint] = None
-            params_to_score: dict[str, Checkpoint] = {}
 
             for checkpoint in checkpoints:
                 if checkpoint.output_score is not None and (
@@ -1146,30 +1152,23 @@ class Evaluator:
                     or checkpoint.created_at > most_recent_checkpoint.created_at
                 ):
                     most_recent_checkpoint = checkpoint
+                if checkpoint.output_score is not None and (
+                    worst_checkpoint is None
+                    or checkpoint.output_score.score
+                    < worst_checkpoint.output_score.score  # type: ignore
+                ):
+                    worst_checkpoint = checkpoint
 
             row_data = dict(checkpoint.input_variables)
-            if best_checkpoint is not None and best_checkpoint.output is not None:
-                params_str = ", ".join(
-                    f"{k}={v}" for k, v in best_checkpoint.eval_params.items()
-                )
-                if params_str:
-                    params_str = f"({params_str})\n"
+            if best_checkpoint is not None:
+                row_data["best_checkpoint"] = best_checkpoint.output_score_repr
+            if most_recent_checkpoint is not None:
+                row_data[
+                    "most_recent_checkpoint"
+                ] = most_recent_checkpoint.output_score_repr
+            if worst_checkpoint is not None:
+                row_data["worst_checkpoint"] = worst_checkpoint.output_score_repr
 
-                row_data["best_checkpoint"] = (
-                    f"Score: {best_checkpoint.output_score}"
-                    + f" @{best_checkpoint.created_at.date()}\n"
-                    + params_str
-                    + best_checkpoint.output[:140]
-                )
-            if (
-                most_recent_checkpoint is not None
-                and most_recent_checkpoint.output is not None
-            ):
-                row_data["most_recent_checkpoint"] = (
-                    f"Score: {most_recent_checkpoint.output_score}"
-                    + f" @{most_recent_checkpoint.created_at.date()}\n"
-                    + most_recent_checkpoint.output[:140]
-                )
             input_specific_rows.append(row_data)
 
         output_table(input_specific_rows, title="Per input stats")

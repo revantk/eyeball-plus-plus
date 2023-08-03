@@ -119,6 +119,33 @@ class Checkpoint:
     def created_at(self) -> datetime:
         return datetime.fromisoformat(self.checkpoint_id)
 
+    @property
+    def output_score_repr(self) -> str:
+        time_ago = datetime.now() - self.created_at
+        if time_ago.days > 0:
+            msg = f"@ {time_ago.days} days ago"
+        elif time_ago.seconds > 3600:
+            msg = f"@ {time_ago.seconds // 3600} hours ago"
+        elif time_ago.seconds > 60:
+            msg = f"@ {time_ago.seconds // 60} minutes ago"
+        else:
+            msg = f"@ {time_ago.seconds} seconds ago"
+        msg += "\n"
+
+        if self.output_score is not None:
+            msg += f"score: {self.output_score.score:.2f}"
+            if self.output_score.message:
+                msg += f" ({self.output_score.message})"
+            msg += "\n"
+
+        params_str = ", ".join(f"{k}={v}" for k, v in self.eval_params.items())
+        if params_str:
+            msg += f"({params_str})\n"
+
+        if self.output is not None:
+            msg += self.output[:140]
+        return msg
+
 
 class EvalRecorder(Protocol):
     def record_input_variable(

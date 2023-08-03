@@ -3,12 +3,14 @@ import openai
 
 
 class QAAgent:
-    def __init__(self):
-        # Agent initialization code
-        ...
+    def _get_context(self, query: str) -> str:
+        if "dog" in query:
+            return "The lazy dog which is not brown jumps over the quick brown fox"
+        else:
+            return "The quick brown fox jumps over the lazy dog"
 
     @eyeball_pp.record_task(args_to_record=["context", "question"])
-    def ask(self, context: str, question: str) -> str:
+    def ask(self, question: str) -> str:
         # You can write arbitrary code here, the only thing the eval framework
         # cares about is the input and output of this function.
         # The input arguments and return value is recorded
@@ -16,8 +18,8 @@ class QAAgent:
         system = """
         You are trying to answer a question strictly using the information provided in the context. Reply I don't know if you don't know the answer.
         """
-
-        eyeball_pp.record_intermediary_state("system_prompt", system)
+        context = self._get_context(question)
+        eyeball_pp.record_intermediary_state("context", context)
 
         prompt = f"""
         Context: {context}
@@ -43,25 +45,21 @@ class QAAgent:
 
 
 if __name__ == "__main__":
-    eyeball_pp.set_config(dir_path="examples")
-    eyeball_pp.calculate_system_health()
-    # agent = QAAgent()
-    # agent.ask(
-    #     context="The quick brown fox jumps over the lazy dog",
-    #     question="What color is the fox?",
-    # )
+    eyeball_pp.set_config(dir_path="examples", record_in_memory=True)
+    agent = QAAgent()
+    agent.ask(
+        question="What color is the fox?",
+    )
 
-    # agent.ask(
-    #     context="The lazy dog which is not brown jumps over the quick brown fox",
-    #     question="What color is the dog?",
-    # )
+    agent.ask(
+        question="What color is the dog?",
+    )
 
-    # for input_vars in eyeball_pp.rerun_recorded_examples(
-    #     {"model": "gpt-4", "temperature": 0.7}
-    # ):
-    #     agent.ask(input_vars["context"], input_vars["question"])
+    # eyeball_pp.calculate_system_health()
+    for input_vars in eyeball_pp.rerun_recorded_examples({"temperature": 0.2}):
+        agent.ask(input_vars["question"])
 
-    # eyeball_pp.compare_recorded_checkpoints(
-    #     task_objective="This agent tries to answer questions given a context. Verify that the agent answers the question correctly and that the answer is only based on the context.",
-    #     num_checkpoints_per_input_hash=4,
-    # )
+    eyeball_pp.compare_recorded_checkpoints(
+        task_objective="This agent tries to answer questions given a context. Verify that the agent answers the question correctly and that the answer is only based on the context.",
+        num_checkpoints_per_input_hash=4,
+    )

@@ -118,4 +118,6 @@ def get_score_map(
             edges_n_hops = get_edges_n_hops(node, edges, n_hops)
             for edge, weight in edges_n_hops:
                 score_map[edge] += max(weight, 0.0)
+            if node not in score_map:
+                score_map[node] = 0.0
     return score_map
