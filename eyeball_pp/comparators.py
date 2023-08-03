@@ -1,6 +1,8 @@
-from typing import Optional
-from .classes import FeedbackResult, OutputFeedback, OutputScore
+from dataclasses import dataclass, asdict
+import json
 import openai
+from typing import Optional, Any
+from .classes import FeedbackResult, OutputFeedback, OutputScore
 
 
 def output_feedback_from_scores(
@@ -23,6 +25,13 @@ def output_feedback_from_scores(
         )
 
 
+@dataclass
+class LLMRequest:
+    objective: str
+    inputs: dict[str, str]
+    responses: list[dict[str, str]]
+
+
 def model_graded_comparator(
     objective: str,
     input_variables: dict[str, str],
@@ -31,44 +40,62 @@ def model_graded_comparator(
     older_checkpoint_intermediary_state: Optional[dict[str, str]] = None,
     newer_checkpoint_intermediary_state: Optional[dict[str, str]] = None,
 ) -> OutputFeedback:
-    input_str = "\n".join([f"{key}: {val}" for key, val in input_variables.items()])
+    system_msg = "You are an evaluator trying to grade the response of two agents based on provided JSON data. Keeping the objectives and the inputs in mind, decide which response is better and provide a reason. You always use the function provided."
+    responses = [
+        {
+            "name": "Andrew",
+            "response": older_checkpoint_output,
+        },
+        {
+            "name": "Barry",
+            "response": newer_checkpoint_output,
+        }
+    ]
+    llm_request = LLMRequest(
+        objective=objective, inputs=input_variables, responses=responses
+    )
+    user_msg = f"""{json.dumps(asdict(llm_request))}
 
-    system_msg = f"""
-You are a human evaluator trying to grade the response of a function based on the following objective and inputs.
+    Given the above objective, inputs and responses, report your decision on the best response along with the reasoning. Think step by step.
+    """
+    functions = [{
+        "name": "report_decision",
+        "description": "report the results of the evaluation",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "decision": {
+                    "type": "string",
+                    "enum": ["Andrew", "Barry", "Same"],
+                    "description": "The name of the agent with the best response. 'Same' if both are equally good.",
+                },
+                "reason": {
+                    "type": "string",
+                    "description": "The reason for the decision.",
+                },
+            },
+            "required": ["decision", "reason"],
+        }
+    }]
 
-Objective:
-{objective}
-
-Inputs: 
-{input_str}
-"""
-
-    is_b_better = f"""
-Keeping the objectives and the inputs in mind, which of the following responses is better?
-
-Response A:
-{older_checkpoint_output}
-
-Response B:
-{newer_checkpoint_output}
-
-Give your reasoning followed by one of the following options:
-Yes -- if Response A is better than B
-No -- if Response B is better than A
-Same -- if both are equally good
-"""
     response = openai.ChatCompletion.create(  # type: ignore
         model="gpt-4",
-        temperature=0.5,
+        temperature=0.1,
         messages=[
             {"role": "system", "content": system_msg},
-            {"role": "user", "content": is_b_better},
+            {"role": "user", "content": user_msg},
         ],
-    )["choices"][0]["message"]["content"]
-    response_last_line = response.split("\n")[-1].lower()
-    if "yes" in response_last_line:
+        functions=functions,
+        function_call={"name": "report_decision"}
+    )["choices"][0]["message"]
+
+    assert response["content"] is None
+    assert response["function_call"]["name"] == "report_decision"
+
+    decision = json.loads(response["function_call"]["arguments"])["decision"]
+    if "Andrew" in decision:
         return OutputFeedback(FeedbackResult.NEGATIVE, response)
-    elif "no" in response_last_line:
+    elif "Barry" in decision:
         return OutputFeedback(FeedbackResult.POSITIVE, response)
     else:
         return OutputFeedback(FeedbackResult.NEUTRAL, response)
