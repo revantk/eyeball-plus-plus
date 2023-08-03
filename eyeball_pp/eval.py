@@ -3,14 +3,12 @@ from contextlib import contextmanager
 from enum import Enum
 import inspect
 import json
-import math
 import os
 import types
 from .recorders import (
     ApiClientRecorder,
     Checkpoint,
     ComparisonResult,
-    DiskRecorder,
     FileRecorder,
     MemoryRecorder,
     EvalRecorder,
@@ -23,6 +21,7 @@ from .classes import (
     OutputScore,
     OutputScorer,
     OutputFeedback,
+    OUTPUT_KEY,
 )
 
 import random
@@ -592,7 +591,7 @@ class Evaluator:
 
                 print(f"For the inputs:\n{checkpoints[0].get_input_var_str()}")
                 for checkpoint in checkpoints:
-                    if checkpoint.output_feedback is None:
+                    if checkpoint.feedback is None:
                         if feedback := already_seen_outputs_to_feedback.get(
                             checkpoint.output
                         ):
@@ -614,9 +613,9 @@ class Evaluator:
                     elif new_feedback := already_seen_outputs_to_feedback.get(
                         checkpoint.output
                     ):
-                        if new_feedback.result != checkpoint.output_feedback.result:
+                        if new_feedback[OUTPUT_KEY].result != checkpoint.feedback.result:
                             print(
-                                f"For output: {checkpoint.output}\nOld feedback {checkpoint.output_feedback} is different from new feedback {new_feedback}"
+                                f"For output: {checkpoint.output}\nOld feedback {checkpoint.feedback} is different from new feedback {new_feedback}"
                             )
                             print(f"Updating feedback to {new_feedback}")
                             self.recorder.record_output_feedback(
@@ -625,7 +624,7 @@ class Evaluator:
                                 feedback=new_feedback,
                             )
                     else:
-                        print(f"Already has feedback: {checkpoint.output_feedback}")
+                        print(f"Already has feedback: {checkpoint.feedback}")
         finally:
             self.mode = EvaluatorMode.RECORD
 
@@ -700,7 +699,7 @@ class Evaluator:
                 reverse=True,
             )
             for idx, comparison_result in enumerate(sorted_comparison_results):
-                msg = str(comparison_result.output_feedback.result)
+                msg = str(comparison_result.feedback[OUTPUT_KEY].result)
                 new_checkpoint = self.recorder.get_checkpoint(
                     task_name=task_name,
                     checkpoint_id=comparison_result.newer_checkpoint_id,
@@ -886,7 +885,7 @@ class Evaluator:
                     ):
                         print(f"Using cached comparison result for {input_hash}")
                         should_record_comparison = False
-                        comparison_feedback = comparator_result.output_feedback
+                        comparison_feedback = comparator_result.feedback
                     elif output_comparator is not None:
                         comparison_feedback = output_comparator(
                             input_variables=newer_checkpoint.get_input_variables(),
@@ -952,7 +951,7 @@ class Evaluator:
 
                     num_comparisons += 1
 
-                    output_comparison_feedback = comparison_feedback['output']
+                    output_comparison_feedback = comparison_feedback[OUTPUT_KEY]
                     if output_comparison_feedback.result == FeedbackResult.NEUTRAL:
                         print(
                             f"{ORANGE}[neutral] task output is the same between checkpoints {older_checkpoint_id} {old_unique_params_str} & {newer_checkpoint_id} {new_unique_params_str} {END_CLR}"
@@ -984,7 +983,7 @@ class Evaluator:
                             result=ComparisonResult(
                                 older_checkpoint_id=older_checkpoint_id,
                                 newer_checkpoint_id=newer_checkpoint_id,
-                                output_feedback=output_comparison_feedback,
+                                feedback=comparison_feedback,
                             ),
                         )
 
@@ -1063,12 +1062,12 @@ class Evaluator:
 
             edges: dict[str, dict[str, float]] = defaultdict(lambda: dict())
             for comparison_result in comparison_results:
-                if comparison_result.output_feedback.result == FeedbackResult.POSITIVE:
+                if comparison_result.feedback[OUTPUT_KEY].result == FeedbackResult.POSITIVE:
                     edges[comparison_result.older_checkpoint_id][
                         comparison_result.newer_checkpoint_id
                     ] = 1.0
                 elif (
-                    comparison_result.output_feedback.result == FeedbackResult.NEGATIVE
+                    comparison_result.feedback[OUTPUT_KEY].result == FeedbackResult.NEGATIVE
                 ):
                     edges[comparison_result.newer_checkpoint_id][
                         comparison_result.older_checkpoint_id

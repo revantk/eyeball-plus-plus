@@ -18,6 +18,9 @@ class FeedbackResult(IntEnum):
             return "📊 neutral"
 
 
+OUTPUT_KEY = "___output___"
+
+
 @dataclass
 class OutputFeedback:
     result: FeedbackResult

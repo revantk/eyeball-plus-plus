@@ -22,13 +22,13 @@ logger = logging.getLogger(__name__)
 class ComparisonResult:
     older_checkpoint_id: str
     newer_checkpoint_id: str
-    output_feedback: dict[str, OutputFeedback]
+    feedback: dict[str, OutputFeedback]
 
     def as_dict(self):
         return {
             "older_checkpoint_id": self.older_checkpoint_id,
             "newer_checkpoint_id": self.newer_checkpoint_id,
-            "output_feedback": self.output_feedback.as_dict(),
+            "feedback": self.feedback,
         }
 
 
@@ -51,7 +51,7 @@ class Checkpoint:
     eval_params: dict[str, Any] = dataclasses.field(default_factory=dict)
     intermediary_state: dict[str, str] = dataclasses.field(default_factory=dict)
     output: Optional[str] = None
-    output_feedback: Optional[OutputFeedback] = None
+    feedback: Optional[dict[str, OutputFeedback]] = None
     output_score: Optional[OutputScore] = None
     rerun_metadata: dict[str, str] = dataclasses.field(default_factory=dict)
 
@@ -89,8 +89,8 @@ class Checkpoint:
             checkpoint_dict["intermediary_state"] = self.intermediary_state
         if self.eval_params:
             checkpoint_dict["eval_params"] = self.eval_params
-        if self.output_feedback is not None:
-            checkpoint_dict["output_feedback"] = self.output_feedback.as_dict()
+        if self.feedback is not None:
+            checkpoint_dict["feedback"] = self.feedback
         if self.output_score is not None:
             checkpoint_dict["output_score"] = self.output_score.as_dict()
         if self.rerun_metadata:
@@ -635,7 +635,7 @@ class MemoryRecorder(EvalRecorder):
         checkpoint = self._fetch_or_create_checkpoint(
             task_name=task_name, checkpoint_id=checkpoint_id
         )
-        checkpoint.output_feedback = feedback
+        checkpoint.feedback = feedback
 
     def get_task_names(self) -> list[str]:
         return list(self.tasks.keys())
@@ -906,7 +906,7 @@ class FileRecorder(EvalRecorder):
         checkpoint.input_variables = yaml_dict.get("input_variables", {})
         checkpoint.eval_params = yaml_dict.get("eval_params", {})
         checkpoint.output = yaml_dict.get("output")
-        checkpoint.output_feedback = (
+        checkpoint.feedback = (
             OutputFeedback.from_dict(yaml_dict.get("output_feedback"))
             if "output_feedback" in yaml_dict
             else None
@@ -987,7 +987,7 @@ class FileRecorder(EvalRecorder):
         file_name = f"{input_hash}_{result.older_checkpoint_id}_{result.newer_checkpoint_id}.yaml"
         file_path = os.path.join(comparison_dir, file_name)
         yaml.dump(
-            result.output_feedback.as_dict(),
+            result.feedback,
             open(file_path, "w+"),
         )
 
@@ -1018,7 +1018,7 @@ class FileRecorder(EvalRecorder):
                 return ComparisonResult(
                     older_checkpoint_id=older_checkpoint_id,
                     newer_checkpoint_id=newer_checkpoint_id,
-                    output_feedback=OutputFeedback.from_dict(yaml_dict),
+                    feedback=yaml_dict,
                 )
         return None
 
@@ -1048,7 +1048,7 @@ class FileRecorder(EvalRecorder):
                     ComparisonResult(
                         older_checkpoint_id=splits[1],
                         newer_checkpoint_id=splits[2],
-                        output_feedback=OutputFeedback.from_dict(yaml_dict),
+                        feedback=yaml_dict,
                     )
                 )
         return sorted(results, key=lambda x: x.newer_checkpoint_id, reverse=True)[

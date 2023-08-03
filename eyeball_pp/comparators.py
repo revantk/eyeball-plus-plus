@@ -2,7 +2,7 @@ from dataclasses import dataclass, asdict
 import json
 import openai
 from typing import Optional, Any
-from .classes import FeedbackResult, OutputFeedback, OutputScore
+from .classes import FeedbackResult, OutputFeedback, OutputScore, OUTPUT_KEY
 
 
 def output_feedback_from_scores(
@@ -121,7 +121,7 @@ def model_graded_comparator(
                 older_checkpoint_response=older_int_state,
                 newer_checkpoint_response=newer_int_state)
 
-    feedback['output'] = _execute_comparator(
+    feedback[OUTPUT_KEY] = _execute_comparator(
         objective=objective_output,
         input_variables=input_variables,
         older_checkpoint_response=older_checkpoint_output,
