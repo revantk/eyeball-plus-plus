@@ -52,7 +52,7 @@ class Checkpoint:
     intermediary_state: dict[str, str] = dataclasses.field(default_factory=dict)
     output: Optional[str] = None
     feedback: Optional[dict[str, OutputFeedback]] = None
-    output_score: Optional[OutputScore] = None
+    score: Optional[dict[str, OutputScore]] = None
     rerun_metadata: dict[str, str] = dataclasses.field(default_factory=dict)
 
     def get_input_variables(self) -> dict[str, str]:
@@ -91,8 +91,8 @@ class Checkpoint:
             checkpoint_dict["eval_params"] = self.eval_params
         if self.feedback is not None:
             checkpoint_dict["feedback"] = self.feedback
-        if self.output_score is not None:
-            checkpoint_dict["output_score"] = self.output_score.as_dict()
+        if self.score is not None:
+            checkpoint_dict["score"] = self.score
         if self.rerun_metadata:
             checkpoint_dict["rerun_metadata"] = self.rerun_metadata
 
@@ -105,11 +105,11 @@ class Checkpoint:
             input_variables=data["input_variables"],
             eval_params=data.get("eval_params") or {},
             output=data["output"],
-            output_feedback=OutputFeedback.from_dict(data["output_feedback"])
-            if data.get("output_feedback") is not None
+            output_feedback=OutputFeedback.from_dict(data["feedback"])
+            if data.get("feedback") is not None
             else None,
-            output_score=OutputScore.from_dict(data["output_score"])
-            if data.get("output_score") is not None
+            output_score=OutputScore.from_dict(data["score"])
+            if data.get("score") is not None
             else None,
             rerun_metadata=data.get("rerun_metadata") or {},
             intermediary_state=data.get("intermediary_state") or {},
@@ -195,7 +195,7 @@ class EvalRecorder(Protocol):
         self,
         task_name: str,
         checkpoint_id: str,
-        score: OutputScore,
+        score: dict[str, OutputScore],
     ) -> None:
         ...
 
@@ -378,14 +378,14 @@ class ApiClientRecorder(EvalRecorder):
         )
 
     def record_output_score(
-        self, task_name: str, checkpoint_id: str, score: OutputScore
+        self, task_name: str, checkpoint_id: str, score: dict[str, OutputScore]
     ) -> None:
         requests.post(
             f"{self.url}/record_output_score",
             json={
                 "task_name": task_name,
                 "checkpoint_id": checkpoint_id,
-                "score": score.as_dict(),
+                "score": score,
             },
             headers=self._get_headers(),
         )
@@ -658,12 +658,12 @@ class MemoryRecorder(EvalRecorder):
         self,
         task_name: str,
         checkpoint_id: str,
-        score: OutputScore,
+        score: dict[str, OutputScore],
     ) -> None:
         checkpoint = self._fetch_or_create_checkpoint(
             task_name=task_name, checkpoint_id=checkpoint_id
         )
-        checkpoint.output_score = score
+        checkpoint.score = score
 
     def get_comparison_result(
         self,
@@ -879,7 +879,7 @@ class FileRecorder(EvalRecorder):
             task_name=task_name,
             checkpoint_id=checkpoint_id,
             prefixes=[],
-            name="output_feedback",
+            name="feedback",
             value=feedback.as_dict(),
             flush=True,
         )
@@ -888,13 +888,13 @@ class FileRecorder(EvalRecorder):
         self,
         task_name: str,
         checkpoint_id: str,
-        score: OutputScore,
+        score: dict[str, OutputScore]
     ) -> None:
         self._record_checkpoint(
             task_name=task_name,
             checkpoint_id=checkpoint_id,
             prefixes=[],
-            name="output_score",
+            name="score",
             value=score.as_dict(),
             flush=True,
         )
@@ -907,12 +907,12 @@ class FileRecorder(EvalRecorder):
         checkpoint.eval_params = yaml_dict.get("eval_params", {})
         checkpoint.output = yaml_dict.get("output")
         checkpoint.feedback = (
-            OutputFeedback.from_dict(yaml_dict.get("output_feedback"))
+            OutputFeedback.from_dict(yaml_dict.get("feedback"))
             if "output_feedback" in yaml_dict
             else None
         )
-        checkpoint.output_score = (
-            OutputScore.from_dict(yaml_dict.get("output_score"))
+        checkpoint.score = (
+            OutputScore.from_dict(yaml_dict.get("score"))
             if "output_score" in yaml_dict
             else None
         )
@@ -1165,7 +1165,7 @@ class DiskRecorder(EvalRecorder):
         self,
         task_name: str,
         checkpoint_id: str,
-        score: OutputScore,
+        score: dict[str, OutputScore],
     ) -> None:
         self.memory_recorder.record_output_score(
             task_name=task_name, checkpoint_id=checkpoint_id, score=score
