@@ -1013,7 +1013,10 @@ class Evaluator:
         date_to_use = datetime.datetime.utcnow().date()
         scored_checkpoints.sort(key=lambda x: x.checkpoint_id, reverse=True)
 
-        for output_name in output_names_to_score:
+        for output_name in sorted(output_names_to_score):
+            output_display_name = (
+                output_name if output_name != OUTPUT_KEY else "Task output"
+            )
             while scored_checkpoints[-1].created_at.date() <= date_to_use:
                 total_score = 0.0
                 num_checkpoints_used = 0
