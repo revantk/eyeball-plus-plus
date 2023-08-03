@@ -22,7 +22,7 @@ from .classes import (
     OutputScore,
     OutputScorer,
     OutputFeedback,
-    OUTPUT_KEY,
+    TASK_OUTPUT_KEY,
 )
 
 import random
@@ -472,7 +472,7 @@ class Evaluator:
         self.recorder.record_output_feedback(
             task_name=task_name,
             checkpoint_id=checkpoint_id,
-            feedback=MultiOutputFeedback({OUTPUT_KEY: output_feedback}),
+            feedback=MultiOutputFeedback({TASK_OUTPUT_KEY: output_feedback}),
         )
         return output_feedback
 
@@ -612,16 +612,18 @@ class Evaluator:
                             if output_feedback is not None:
                                 already_seen_outputs_to_feedback[
                                     checkpoint.output
-                                ] = MultiOutputFeedback({OUTPUT_KEY: output_feedback})
+                                ] = MultiOutputFeedback(
+                                    {TASK_OUTPUT_KEY: output_feedback}
+                                )
                     elif new_feedback := already_seen_outputs_to_feedback.get(
                         checkpoint.output
                     ):
                         if (
-                            new_feedback[OUTPUT_KEY].result
-                            != checkpoint.feedback[OUTPUT_KEY].result
+                            new_feedback[TASK_OUTPUT_KEY].result
+                            != checkpoint.feedback[TASK_OUTPUT_KEY].result
                         ):
                             print(
-                                f"For output: {checkpoint.output}\nOld feedback {checkpoint.feedback[OUTPUT_KEY]} is different from new feedback {new_feedback[OUTPUT_KEY]}"
+                                f"For output: {checkpoint.output}\nOld feedback {checkpoint.feedback[TASK_OUTPUT_KEY]} is different from new feedback {new_feedback[TASK_OUTPUT_KEY]}"
                             )
                             print(f"Updating feedback to {new_feedback}")
                             self.recorder.record_output_feedback(
@@ -631,7 +633,7 @@ class Evaluator:
                             )
                     else:
                         print(
-                            f"Output: {checkpoint.output[:140]} already has feedback: {checkpoint.feedback.get(OUTPUT_KEY)}"
+                            f"Output: {checkpoint.output[:140]} already has feedback: {checkpoint.feedback.get(TASK_OUTPUT_KEY)}"
                         )
         finally:
             self.mode = EvaluatorMode.RECORD
@@ -852,7 +854,7 @@ class Evaluator:
 
                     num_comparisons += 1
 
-                    output_comparison_feedback = comparison_feedback[OUTPUT_KEY]
+                    output_comparison_feedback = comparison_feedback[TASK_OUTPUT_KEY]
                     if output_comparison_feedback.result == FeedbackResult.NEUTRAL:
                         print(
                             f"{ORANGE}[neutral] task output is the same between checkpoints {older_checkpoint_id} {old_unique_params_str} & {newer_checkpoint_id} {new_unique_params_str} {END_CLR}"
@@ -1015,7 +1017,7 @@ class Evaluator:
 
         for output_name in sorted(output_names_to_score):
             output_display_name = (
-                output_name if output_name != OUTPUT_KEY else "Task output"
+                output_name if output_name != TASK_OUTPUT_KEY else "Task output"
             )
             while scored_checkpoints[-1].created_at.date() <= date_to_use:
                 total_score = 0.0

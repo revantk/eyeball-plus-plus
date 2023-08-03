@@ -18,7 +18,7 @@ class FeedbackResult(IntEnum):
             return "📊 neutral"
 
 
-OUTPUT_KEY = "___output___"
+TASK_OUTPUT_KEY = "task_output"
 
 
 @dataclass

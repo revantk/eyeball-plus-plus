@@ -7,7 +7,7 @@ from .classes import (
     MultiOutputFeedback,
     OutputFeedback,
     OutputScore,
-    OUTPUT_KEY,
+    TASK_OUTPUT_KEY,
 )
 
 
@@ -140,7 +140,7 @@ def model_graded_comparator(
             else:
                 print(f"Warning: No objective found for {key} in intermediary state")
 
-    feedback[OUTPUT_KEY] = _execute_comparator(
+    feedback[TASK_OUTPUT_KEY] = _execute_comparator(
         objective=task_objective,
         input_variables=input_variables,
         older_checkpoint_response=older_checkpoint_output,

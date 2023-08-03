@@ -259,6 +259,7 @@ class ApiClientRecorder(EvalRecorder):
         else:
             self.url = api_url
         self.checkpoint_dicts: LruCache = LruCache(max_size=100)
+        self.comparison_results_dict: LruCache = LruCache(max_size=100)
         self.pool = ThreadPoolExecutor(max_workers=1)
 
     def _get_headers(self) -> dict[str, str]:
@@ -380,14 +381,14 @@ class ApiClientRecorder(EvalRecorder):
         )
 
     def record_output_scores(
-        self, task_name: str, checkpoint_id: str, score: dict[str, OutputScore]
+        self, task_name: str, checkpoint_id: str, scores: dict[str, OutputScore]
     ) -> None:
         requests.post(
-            f"{self.url}/record_output_score",
+            f"{self.url}/record_output_scores",
             json={
                 "task_name": task_name,
                 "checkpoint_id": checkpoint_id,
-                "score": score,
+                "scores": scores,
             },
             headers=self._get_headers(),
         )
