@@ -589,7 +589,7 @@ class Evaluator:
                 if len(checkpoints) == 0:
                     continue
 
-                print(f"For the inputs:\n{checkpoints[0].get_input_var_str()}")
+                print(f"\nFor inputs:\n{checkpoints[0].get_input_var_str()}")
                 for checkpoint in checkpoints:
                     if checkpoint.output is None:
                         continue
@@ -630,7 +630,9 @@ class Evaluator:
                                 feedback=new_feedback,
                             )
                     else:
-                        print(f"Already has feedback: {checkpoint.feedback}")
+                        print(
+                            f"Output: {checkpoint.output[:140]} already has feedback: {checkpoint.feedback.get(OUTPUT_KEY)}"
+                        )
         finally:
             self.mode = EvaluatorMode.RECORD
 

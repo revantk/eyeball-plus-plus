@@ -35,6 +35,12 @@ class OutputFeedback:
             result=FeedbackResult[data["result"]], message=data["message"]
         )
 
+    def __str__(self) -> str:
+        if self.message:
+            return f"{self.result} ({self.message})"
+        else:
+            return f"{self.result}"
+
 
 class MultiOutputFeedback(dict[str, OutputFeedback]):
     def as_dict(self):
@@ -45,6 +51,9 @@ class MultiOutputFeedback(dict[str, OutputFeedback]):
         return MultiOutputFeedback(
             {key: OutputFeedback.from_dict(value) for key, value in data.items()}
         )
+
+    def __str__(self) -> str:
+        return "\n".join([f"{key}: {value}" for key, value in self.items()])
 
 
 @dataclass
