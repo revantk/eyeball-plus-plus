@@ -98,7 +98,7 @@ class OutputComparator(Protocol):
         objectives_intermediary_state: Optional[dict[str, str]] = None,
         older_checkpoint_intermediary_state: Optional[dict[str, str]] = None,
         newer_checkpoint_intermediary_state: Optional[dict[str, str]] = None,
-    ) -> dict[str, OutputFeedback]:
+    ) -> MultiOutputFeedback:
         ...
 
 
@@ -111,5 +111,5 @@ class OutputScorer(Protocol):
         input_variables: dict[str, str],
         output: str,
         intermediary_state: Optional[dict[str, str]] = None,
-    ) -> dict[str, OutputScore]:
+    ) -> MultiOutputScores:
         ...

@@ -2,7 +2,13 @@ from dataclasses import dataclass, asdict
 import json
 import openai
 from typing import Optional, Any
-from .classes import FeedbackResult, OutputFeedback, OutputScore, OUTPUT_KEY
+from .classes import (
+    FeedbackResult,
+    MultiOutputFeedback,
+    OutputFeedback,
+    OutputScore,
+    OUTPUT_KEY,
+)
 
 
 def output_feedback_from_scores(
@@ -117,7 +123,7 @@ def model_graded_comparator(
     objectives_intermediary_state: Optional[dict[str, str]] = None,
     older_checkpoint_intermediary_state: Optional[dict[str, str]] = None,
     newer_checkpoint_intermediary_state: Optional[dict[str, str]] = None,
-) -> dict[str, OutputFeedback]:
+) -> MultiOutputFeedback:
     feedback = {}
 
     if older_checkpoint_intermediary_state and newer_checkpoint_intermediary_state:
@@ -141,4 +147,4 @@ def model_graded_comparator(
         newer_checkpoint_response=newer_checkpoint_output,
     )
 
-    return feedback
+    return MultiOutputFeedback(feedback)

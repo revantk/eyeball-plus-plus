@@ -12,7 +12,7 @@ import dataclasses
 import requests
 
 from .utils import LruCache
-from .classes import OutputFeedback, OutputScore, MultiOutputScores
+from .classes import MultiOutputFeedback, OutputFeedback, OutputScore, MultiOutputScores
 import logging
 
 logger = logging.getLogger(__name__)
@@ -22,13 +22,13 @@ logger = logging.getLogger(__name__)
 class ComparisonResult:
     older_checkpoint_id: str
     newer_checkpoint_id: str
-    feedback: dict[str, OutputFeedback]
+    feedback: MultiOutputFeedback
 
     def as_dict(self):
         return {
             "older_checkpoint_id": self.older_checkpoint_id,
             "newer_checkpoint_id": self.newer_checkpoint_id,
-            "feedback": {k: v.as_dict() for k, v in self.feedback.items()},
+            "feedback": self.feedback.as_dict(),
         }
 
 
@@ -51,7 +51,9 @@ class Checkpoint:
     eval_params: dict[str, Any] = dataclasses.field(default_factory=dict)
     intermediary_state: dict[str, str] = dataclasses.field(default_factory=dict)
     output: Optional[str] = None
-    feedback: dict[str, OutputFeedback] = dataclasses.field(default_factory=dict)
+    feedback: MultiOutputFeedback = dataclasses.field(
+        default_factory=MultiOutputFeedback
+    )
     scores: MultiOutputScores = dataclasses.field(default_factory=MultiOutputScores)
     rerun_metadata: dict[str, str] = dataclasses.field(default_factory=dict)
 
@@ -105,12 +107,10 @@ class Checkpoint:
             input_variables=data["input_variables"],
             eval_params=data.get("eval_params") or {},
             output=data["output"],
-            feedback={
-                k: OutputFeedback.from_dict(v) for k, v in data["feedback"].items()
-            }
+            feedback=MultiOutputFeedback.from_dict(data["feedback"])
             if data.get("feedback") is not None
             else {},
-            score={k: OutputScore.from_dict(v) for k, v in data["score"].items()}
+            scores=MultiOutputScores.from_dict(data.get("score"))
             if data.get("score") is not None
             else {},
             rerun_metadata=data.get("rerun_metadata") or {},
@@ -189,15 +189,15 @@ class EvalRecorder(Protocol):
         self,
         task_name: str,
         checkpoint_id: str,
-        feedback: dict[str, OutputFeedback],
+        feedback: MultiOutputFeedback,
     ) -> None:
         ...
 
-    def record_output_score(
+    def record_output_scores(
         self,
         task_name: str,
         checkpoint_id: str,
-        score: dict[str, OutputScore],
+        scores: MultiOutputScores,
     ) -> None:
         ...
 
@@ -348,7 +348,7 @@ class ApiClientRecorder(EvalRecorder):
         task_name: str,
         checkpoint_id: str,
         eval_params: dict[str, Any],
-        rerun_metadata: dict[str, Any] = None,
+        rerun_metadata: Optional[dict[str, Any]] = None,
     ) -> None:
         self._record_checkpoint(
             task_name=task_name,
@@ -379,7 +379,7 @@ class ApiClientRecorder(EvalRecorder):
             headers=self._get_headers(),
         )
 
-    def record_output_score(
+    def record_output_scores(
         self, task_name: str, checkpoint_id: str, score: dict[str, OutputScore]
     ) -> None:
         requests.post(
@@ -393,7 +393,7 @@ class ApiClientRecorder(EvalRecorder):
         )
 
     def record_output_feedback(
-        self, task_name: str, checkpoint_id: str, feedback: OutputFeedback
+        self, task_name: str, checkpoint_id: str, feedback: MultiOutputFeedback
     ) -> None:
         requests.post(
             f"{self.url}/record_output_feedback",
@@ -632,7 +632,7 @@ class MemoryRecorder(EvalRecorder):
         self,
         task_name: str,
         checkpoint_id: str,
-        feedback: dict[str, OutputFeedback],
+        feedback: MultiOutputFeedback,
     ) -> None:
         checkpoint = self._fetch_or_create_checkpoint(
             task_name=task_name, checkpoint_id=checkpoint_id
@@ -656,16 +656,16 @@ class MemoryRecorder(EvalRecorder):
             task.input_hash_to_comparison_results[input_hash] = set()
         task.input_hash_to_comparison_results[input_hash].add(key)
 
-    def record_output_score(
+    def record_output_scores(
         self,
         task_name: str,
         checkpoint_id: str,
-        score: dict[str, OutputScore],
+        scores: MultiOutputScores,
     ) -> None:
         checkpoint = self._fetch_or_create_checkpoint(
             task_name=task_name, checkpoint_id=checkpoint_id
         )
-        checkpoint.scores = score
+        checkpoint.scores = scores
 
     def get_comparison_result(
         self,
@@ -875,26 +875,26 @@ class FileRecorder(EvalRecorder):
         self,
         task_name: str,
         checkpoint_id: str,
-        feedback: dict[str, OutputFeedback],
+        feedback: MultiOutputFeedback,
     ) -> None:
         self._record_checkpoint(
             task_name=task_name,
             checkpoint_id=checkpoint_id,
             prefixes=[],
             name="feedback",
-            value={k: v.as_dict() for k, v in feedback.items()},
+            value=feedback.as_dict(),
             flush=True,
         )
 
-    def record_output_score(
-        self, task_name: str, checkpoint_id: str, score: dict[str, OutputScore]
+    def record_output_scores(
+        self, task_name: str, checkpoint_id: str, scores: MultiOutputScores
     ) -> None:
         self._record_checkpoint(
             task_name=task_name,
             checkpoint_id=checkpoint_id,
             prefixes=[],
             name="score",
-            value=score.as_dict(),
+            value=scores.as_dict(),
             flush=True,
         )
 
@@ -906,13 +906,13 @@ class FileRecorder(EvalRecorder):
         checkpoint.eval_params = yaml_dict.get("eval_params", {})
         checkpoint.output = yaml_dict.get("output")
         checkpoint.feedback = (
-            OutputFeedback.from_dict(yaml_dict.get("feedback"))
-            if "output_feedback" in yaml_dict
+            MultiOutputFeedback.from_dict(yaml_dict.get("feedback"))
+            if "feedback" in yaml_dict
             else None
         )
         checkpoint.scores = (
-            OutputScore.from_dict(yaml_dict.get("score"))
-            if "output_score" in yaml_dict
+            MultiOutputScores.from_dict(yaml_dict.get("scores"))
+            if "scores" in yaml_dict
             else None
         )
         checkpoint.rerun_metadata = yaml_dict.get("rerun_metadata") or {}
@@ -986,7 +986,7 @@ class FileRecorder(EvalRecorder):
         file_name = f"{input_hash}_{result.older_checkpoint_id}_{result.newer_checkpoint_id}.yaml"
         file_path = os.path.join(comparison_dir, file_name)
         yaml.dump(
-            result.feedback,
+            result.feedback.as_dict(),
             open(file_path, "w+"),
         )
 
@@ -1017,7 +1017,7 @@ class FileRecorder(EvalRecorder):
                 return ComparisonResult(
                     older_checkpoint_id=older_checkpoint_id,
                     newer_checkpoint_id=newer_checkpoint_id,
-                    feedback=yaml_dict,
+                    feedback=MultiOutputFeedback.from_dict(yaml_dict),
                 )
         return None
 
@@ -1047,7 +1047,7 @@ class FileRecorder(EvalRecorder):
                     ComparisonResult(
                         older_checkpoint_id=splits[1],
                         newer_checkpoint_id=splits[2],
-                        feedback=yaml_dict,
+                        feedback=MultiOutputFeedback.from_dict(yaml_dict),
                     )
                 )
         return sorted(results, key=lambda x: x.newer_checkpoint_id, reverse=True)[
@@ -1120,7 +1120,7 @@ class DiskRecorder(EvalRecorder):
         self,
         task_name: str,
         checkpoint_id: str,
-        feedback: OutputFeedback,
+        feedback: MultiOutputFeedback,
     ) -> None:
         self.memory_recorder.record_output_feedback(
             task_name=task_name,
@@ -1160,14 +1160,14 @@ class DiskRecorder(EvalRecorder):
         )
         pickle.dump(self.memory_recorder, open(self.file_name, "wb"))
 
-    def record_output_score(
+    def record_output_scores(
         self,
         task_name: str,
         checkpoint_id: str,
-        score: dict[str, OutputScore],
+        scores: MultiOutputScores,
     ) -> None:
-        self.memory_recorder.record_output_score(
-            task_name=task_name, checkpoint_id=checkpoint_id, score=score
+        self.memory_recorder.record_output_scores(
+            task_name=task_name, checkpoint_id=checkpoint_id, scores=scores
         )
         pickle.dump(self.memory_recorder, open(self.file_name, "wb"))
 

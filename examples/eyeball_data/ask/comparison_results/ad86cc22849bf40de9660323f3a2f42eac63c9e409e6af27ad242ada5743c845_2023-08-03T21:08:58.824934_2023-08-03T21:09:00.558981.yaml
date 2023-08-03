@@ -1,0 +1,8 @@
+___output___:
+  message: Both agents, Andrew and Barry, provided the same response to the question,
+    which is 'I don't know.' Therefore, neither response is better than the other.
+  result: NEUTRAL
+context:
+  message: Both Andrew and Barry provided the same response which is relevant to the
+    question asked.
+  result: NEUTRAL

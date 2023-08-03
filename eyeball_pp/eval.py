@@ -666,7 +666,7 @@ class Evaluator:
         task_name: Optional[str] = None,
         num_input_hashes: int = 5,
         num_checkpoints_per_input_hash: int = 3,
-        output_objective: Optional[str] = None,
+        task_objective: Optional[str] = None,
         output_comparator: Optional[OutputComparator] = None,
         output_scorer: Optional[OutputScorer] = None,
         intermediate_objectives: Optional[dict[str, str]] = None,
@@ -678,7 +678,7 @@ class Evaluator:
         if output_comparator is None and output_scorer is None:
             output_comparator = model_graded_comparator
             assert (
-                output_objective is not None
+                task_objective is not None
             ), "Must provide an objective to compare or an output comparator"
 
         input_hashes_list = self.recorder.get_input_hashes(task_name)
@@ -723,19 +723,19 @@ class Evaluator:
                             )
 
                         assert checkpoint_to_score.output is not None
-                        scores_dict = output_scorer(
-                            output_objective or "",
+                        multi_output_scores = output_scorer(
+                            task_objective or "",
                             checkpoint_to_score.get_input_variables(),
                             checkpoint_to_score.output,
                             checkpoint_to_score.intermediary_state,
                         )
-                        self.recorder.record_output_score(
+                        self.recorder.record_output_scores(
                             task_name=task_name,
                             checkpoint_id=checkpoint_id,
-                            score=scores_dict,
+                            scores=multi_output_scores,
                         )
-                        checkpoint_to_score.scores = scores_dict
-                        print(f"Scored {checkpoint_id}: {scores_dict}")
+                        checkpoint_to_score.scores = multi_output_scores
+                        print(f"Scored {checkpoint_id}: {multi_output_scores}")
 
                 if len(checkpoint_ids) < 2:
                     continue
@@ -787,7 +787,7 @@ class Evaluator:
                             input_variables=newer_checkpoint.get_input_variables(),
                             older_checkpoint_output=older_checkpoint_output,
                             newer_checkpoint_output=newer_checkpoint_output,
-                            objective_output=output_objective or "",
+                            task_objective=task_objective or "",
                             objectives_intermediary_state=intermediate_objectives,
                             older_checkpoint_intermediary_state=older_checkpoint.intermediary_state,
                             newer_checkpoint_intermediary_state=newer_checkpoint.intermediary_state,
@@ -847,7 +847,6 @@ class Evaluator:
 
                     num_comparisons += 1
 
-                    print(f"comparison_feedback: {comparison_feedback}")
                     output_comparison_feedback = comparison_feedback[OUTPUT_KEY]
                     if output_comparison_feedback.result == FeedbackResult.NEUTRAL:
                         print(
@@ -905,7 +904,6 @@ class Evaluator:
                     params = "default"
                 print(f"{params}: {num_successes}/{num_comparisons} successes")
 
-            # self.compute_latest_comparison_results(task_name)
             self.calculate_system_health(task_name=task_name)
 
         finally:
@@ -1079,17 +1077,19 @@ class Evaluator:
 
                 row_data = dict(checkpoint.input_variables)
                 if best_checkpoint is not None:
-                    row_data["best_checkpoint"] = best_checkpoint.output_score_repr
+                    row_data["best_checkpoint"] = best_checkpoint.output_score_repr(
+                        output_name=output_name
+                    )
                 if most_recent_checkpoint is not None:
                     row_data[
                         "most_recent_checkpoint"
-                    ] = most_recent_checkpoint.output_score_repr
+                    ] = most_recent_checkpoint.output_score_repr(output_name)
                 if worst_checkpoint is not None:
-                    row_data["worst_checkpoint"] = worst_checkpoint.output_score_repr
-
-            input_specific_rows.append(row_data)
-
-        output_table(input_specific_rows, title=f"{output_name} per input stats")
+                    row_data["worst_checkpoint"] = worst_checkpoint.output_score_repr(
+                        output_name=output_name
+                    )
+                input_specific_rows.append(row_data)
+            output_table(input_specific_rows, title=f"{output_name} per input stats")
 
 
 _default_evaluator = Evaluator()

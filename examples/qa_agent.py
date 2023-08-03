@@ -60,7 +60,7 @@ if __name__ == "__main__":
     #     agent.ask(input_vars["question"])
 
     eyeball_pp.compare_recorded_checkpoints(
-        output_objective="This agent tries to answer questions given a context. Verify that the agent answers the question correctly and that the answer is only based on the context.",
+        task_objective="This agent tries to answer questions given a context. Verify that the agent answers the question correctly and that the answer is only based on the context.",
         intermediate_objectives={
             "context": "The context should be relevant to the question",
         },
