@@ -46,10 +46,10 @@ class QAAgent:
 
 if __name__ == "__main__":
     eyeball_pp.set_config(dir_path="examples")
-    # eyeball_pp.set_config(
-    #     api_key="eb26fea1b82d486b9edc58dcb882ea23", api_url="http://localhost:8081"
-    # )
-    eyeball_pp.set_config(api_key="1126bf63fc4d44c7bf53e9d6442ae9b9")
+    eyeball_pp.set_config(
+        api_key="eb26fea1b82d486b9edc58dcb882ea23", api_url="http://localhost:8081"
+    )
+    # eyeball_pp.set_config(api_key="1126bf63fc4d44c7bf53e9d6442ae9b9")
     agent = QAAgent()
     # agent.ask(
     #     question="What color is the fox?",
@@ -62,11 +62,11 @@ if __name__ == "__main__":
     # for input_vars in eyeball_pp.rerun_recorded_examples({"temperature": 0.2}):
     #     agent.ask(input_vars["question"])
 
-    eyeball_pp.compare_recorded_checkpoints(
-        task_objective="This agent tries to answer questions given a context. Verify that the agent answers the question correctly and that the answer is only based on the context.",
-        intermediate_objectives={
-            "context": "The context should be relevant to the question",
-        },
-        num_checkpoints_per_input_hash=4,
-    )
-    # # eyeball_pp.rate_recorded_examples()
+    # eyeball_pp.compare_recorded_checkpoints(
+    #     task_objective="This agent tries to answer questions given a context. Verify that the agent answers the question correctly and that the answer is only based on the context.",
+    #     intermediate_objectives={
+    #         "context": "The context should be relevant to the question",
+    #     },
+    #     num_checkpoints_per_input_hash=4,
+    # )
+    eyeball_pp.calculate_system_health()

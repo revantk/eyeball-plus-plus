@@ -31,6 +31,14 @@ class ComparisonResult:
             "feedback": self.feedback.as_dict(),
         }
 
+    @staticmethod
+    def from_dict(data):
+        return ComparisonResult(
+            older_checkpoint_id=data["older_checkpoint_id"],
+            newer_checkpoint_id=data["newer_checkpoint_id"],
+            feedback=MultiOutputFeedback.from_dict(data["feedback"]),
+        )
+
 
 def get_input_hash(input_variables: dict[str, str]) -> str:
     sorted_input_vars = sorted(
@@ -260,6 +268,7 @@ class ApiClientRecorder(EvalRecorder):
             self.url = api_url
         self.checkpoint_dicts: LruCache = LruCache(max_size=100)
         self.comparison_results_dict: LruCache = LruCache(max_size=100)
+
         self.pool = ThreadPoolExecutor(max_workers=1)
 
     def _get_headers(self) -> dict[str, str]:
@@ -370,15 +379,20 @@ class ApiClientRecorder(EvalRecorder):
     def record_comparison_result(
         self, task_name: str, input_hash: str, result: ComparisonResult
     ) -> None:
-        requests.post(
-            f"{self.url}/record_comparison_result",
-            json={
-                "task_name": task_name,
-                "input_hash": input_hash,
-                "result": result.as_dict(),
-            },
-            headers=self._get_headers(),
-        )
+        def _record():
+            requests.post(
+                f"{self.url}/record_comparison_result",
+                json={
+                    "task_name": task_name,
+                    "input_hash": input_hash,
+                    **result.as_dict(),
+                },
+                headers=self._get_headers(),
+            )
+
+        self.pool.submit(_record)
+        key = f"{task_name},{result.older_checkpoint_id},{result.newer_checkpoint_id}"
+        self.comparison_results_dict[key] = result
 
     def record_output_scores(
         self, task_name: str, checkpoint_id: str, scores: dict[str, OutputScore]
@@ -411,7 +425,9 @@ class ApiClientRecorder(EvalRecorder):
     ) -> None:
         ...
 
-    def get_checkpoint(self, task_name: str, checkpoint_id: str) -> Checkpoint:
+    def get_checkpoint(
+        self, task_name: str, checkpoint_id: str
+    ) -> Optional[Checkpoint]:
         dict_key = f"{task_name},{checkpoint_id}"
         if dict_key in self.checkpoint_dicts:
             return Checkpoint(**(self.checkpoint_dicts[dict_key]))
@@ -429,17 +445,51 @@ class ApiClientRecorder(EvalRecorder):
                 f"Failed to get checkpoint - {checkpoint_id}: {response.status_code}"
             )
             return None
-        return Checkpoint(**response.json())
+        return Checkpoint.from_dict(response.json())
 
     def get_comparison_result(
         self, task_name: str, older_checkpoint_id: str, newer_checkpoint_id: str
-    ) -> ComparisonResult:
-        ...
+    ) -> Optional[ComparisonResult]:
+        key = f"{task_name},{older_checkpoint_id},{newer_checkpoint_id}"
+        if key in self.comparison_results_dict:
+            return self.comparison_results_dict[key]
+        else:
+            response = requests.get(
+                f"{self.url}/get_comparison_result",
+                params={
+                    "task_name": task_name,
+                    "older_checkpoint_id": older_checkpoint_id,
+                    "newer_checkpoint_id": newer_checkpoint_id,
+                },
+                headers=self._get_headers(),
+            )
+            if response.status_code != 200:
+                logger.debug(f"Failed to get comparison result: {response.status_code}")
+                return None
+            response_dict = response.json()
+            if "success" in response_dict and not response_dict["success"]:
+                return None
+            return ComparisonResult.from_dict(response_dict)
 
     def get_comparison_results_for_input_hash(
         self, task_name: str, input_hash: str, num_results: int = 3
     ) -> list[ComparisonResult]:
-        return []
+        response = requests.get(
+            f"{self.url}/get_comparison_results_for_input_hash",
+            params={
+                "task_name": task_name,
+                "input_hash": input_hash,
+                "num_results": num_results,
+            },
+            headers=self._get_headers(),
+        )
+        if response.status_code != 200:
+            logger.debug(f"Failed to get comparison results: {response.status_code}")
+            return []
+        return [
+            ComparisonResult.from_dict(data)
+            for data in response.json()["comparison_results"]
+        ]
 
     def get_input_hashes(self, task_name: str) -> list[str]:
         response = requests.get(

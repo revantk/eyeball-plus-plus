@@ -976,10 +976,8 @@ class Evaluator:
                         num_results=num_samples,
                     )
                 )
-
             for cr in comparison_results:
                 output_names_to_score |= set(cr.feedback.keys())
-
             for output_name in output_names_to_score:
                 edges: dict[str, dict[str, float]] = defaultdict(lambda: dict())
                 for comparison_result in comparison_results:
