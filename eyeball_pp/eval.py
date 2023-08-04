@@ -955,6 +955,10 @@ class Evaluator:
 
         # If the outputs have scores, we can calculate a rolling average
         scored_checkpoints: list[Checkpoint] = []
+        rerunid_to_checkpoint_feedback: dict[
+            str, dict[str, dict[str, Optional[FeedbackResult]]]
+        ] = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: None)))
+
         for c in all_checkpoints:
             scored_outputs = set(c.scores.keys())
             if len(scored_outputs) > 0:
@@ -980,6 +984,18 @@ class Evaluator:
                     feedback = comparison_result.feedback.get(output_name)
                     if feedback is None:
                         continue
+
+                    if (
+                        new_checkpoint := all_checkpoints_dict.get(
+                            comparison_result.newer_checkpoint_id
+                        )
+                    ) is not None:
+                        if new_checkpoint.rerun_metadata:
+                            rerunid_to_checkpoint_feedback[
+                                new_checkpoint.rerun_metadata["id"]
+                            ][comparison_result.newer_checkpoint_id][
+                                output_name
+                            ] = feedback.result
 
                     if feedback.result == FeedbackResult.POSITIVE:
                         edges[comparison_result.older_checkpoint_id][
@@ -1031,16 +1047,52 @@ class Evaluator:
             # We want to show how many inputs performed better in this re-run ideally
             # For now let's show score and then change it up
             row: dict[str, Any] = {"rerun_id": rerun_id}
+
+            # num_better, num_worse, num_same
+            output_feedback_status: dict[str, list[float]] = defaultdict(
+                lambda: [0.0, 0.0, 0.0, 0.0]
+            )
+            all_output_names: set[str] = set()
             rerun_input_hashes: set[str] = set()
             for checkpoint in checkpoints:
                 rerun_input_hashes.add(checkpoint.get_input_hash())
                 for output_name, output_score in checkpoint.scores.items():
-                    if output_name not in row:
-                        row[output_name] = output_score.score
-                    else:
-                        row[output_name] += output_score.score
+                    all_output_names.add(output_name)
+                    if (
+                        feedback_result := rerunid_to_checkpoint_feedback[rerun_id][
+                            checkpoint.checkpoint_id
+                        ]
+                    ) is not None:
+                        if feedback_result == FeedbackResult.POSITIVE:
+                            output_feedback_status[output_name][0] += 1.0
+                        elif feedback_result == FeedbackResult.NEGATIVE:
+                            output_feedback_status[output_name][1] += 1.0
+                        else:
+                            output_feedback_status[output_name][2] += 1.0
+
+                    output_feedback_status[output_name][3] += output_score.score
+
+            for output_name in all_output_names:
+                num_better, num_worse, num_same, score = output_feedback_status[
+                    output_name
+                ]
+                total = int(num_better + num_worse + num_same)
+                trend_msg = ""
+                if num_better > 0:
+                    trend_msg += f"{int(num_better)}/{total} got better\n"
+                if num_worse > 0:
+                    trend_msg += f"{int(num_worse)}/{total} got worse\n"
+                if num_same > 0:
+                    trend_msg += f"{int(num_same)}/{total} stayed the same\n"
+
+                if trend_msg:
+                    row[f"{output_name} trend"] = trend_msg
+                else:
+                    row[f"{output_name} relative score"] = score
+
             row["num_checkpoints_used"] = len(checkpoints)
             row["input_diversity"] = len(input_hashes)
+
             rerun_rows.append(row)
         output_table(rerun_rows, title="Rerun stats")
 
