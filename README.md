@@ -111,11 +111,11 @@ The comparison will also output a benchmark.md file in your repo with the compar
 # Configuration 
 
 ## Serialization
-For the `record_task` decorator you need to ensure that the inputs to the function and outputs are json serialable. If the variables are custom classes you can define the `to_json` and `from_json` functions on that object. If you want to skip serializing some inputs you can specify that in the decorator as `args_to_skip` 
+For the `record_task` decorator you need to ensure that the inputs to the function and outputs are json serialable. If the variables are custom classes you can define the `to_json` function on that object.
 eg. 
 ```python
 @eyeball_pp.record_task(args_to_skip=["input_a"])
-def your_task_function(input_a, input_b: SomeComplexType) -> str:
+def your_task_function(input_a, input_b: SomeComplexType) -> SomeComplexOutput:
   ...
   return task_output
 
@@ -123,8 +123,9 @@ class SomeComplexType:
   def to_json(self) -> str:
     ...
 
-  def from_json(json_str: str) -> 'SomeComplexType':
-    ...  
+class SomeComplexOutput:
+  def to_json(self) -> str:
+    ...
 ```
 
 ## Sample rate 
