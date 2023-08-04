@@ -39,12 +39,10 @@ If your sytem is more complicated, you can also use the `record_input` and `reco
 ```python
 import eyeball_pp
 
-# your task code 
-...
 with eyeball_pp.start_recording_session(task_name="your_task", checkpoint_id="some_custom_unique_id"):
   eyeball_pp.record_input('input_a', input_a_value)
   eyeball_pp.record_input('input_b', input_b_value)
-  ...
+  # your task code
   eyeball_pp.record_output(output)
 ```
 
