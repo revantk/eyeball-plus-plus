@@ -59,10 +59,6 @@ class JsonSerializable(Protocol):
     def to_json(self) -> str:
         ...
 
-    @staticmethod
-    def from_json(json_str: str) -> "JsonSerializable":
-        ...
-
 
 T = TypeVar("T", int, float, str, bool, bytes, dict, list, None, JsonSerializable)
 
