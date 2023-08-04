@@ -497,6 +497,7 @@ class Evaluator:
 
         if input_hashes is None or len(input_hashes) == 0:
             input_hashes = self.recorder.get_input_hashes(task_name=task_name)
+            print(f"Input hashes {input_hashes}")
 
         if randomize and input_hashes:
             random.shuffle(input_hashes)

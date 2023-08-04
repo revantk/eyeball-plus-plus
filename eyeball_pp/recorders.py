@@ -418,7 +418,7 @@ class ApiClientRecorder(EvalRecorder):
 
         response = requests.get(
             f"{self.url}/get_checkpoint",
-            json={
+            params={
                 "task_name": task_name,
                 "checkpoint_id": checkpoint_id,
             },
@@ -444,7 +444,7 @@ class ApiClientRecorder(EvalRecorder):
     def get_input_hashes(self, task_name: str) -> list[str]:
         response = requests.get(
             f"{self.url}/get_input_hashes",
-            json={
+            params={
                 "task_name": task_name,
             },
             headers=self._get_headers(),
@@ -459,7 +459,7 @@ class ApiClientRecorder(EvalRecorder):
     ) -> list[Checkpoint]:
         response = requests.get(
             f"{self.url}/get_latest_checkpoints",
-            json={
+            params={
                 "task_name": task_name,
                 "input_hash": input_hash,
                 "num_checkpoints": num_checkpoints,
