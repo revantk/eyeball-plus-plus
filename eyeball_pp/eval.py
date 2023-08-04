@@ -1018,10 +1018,33 @@ class Evaluator:
         date_to_use = datetime.datetime.utcnow().date()
         scored_checkpoints.sort(key=lambda x: x.checkpoint_id, reverse=True)
 
+        # Group by reruns if they exist
+        rerun_ids_to_score: dict[str, list[Checkpoint]] = defaultdict(list)
+        for checkpoint in scored_checkpoints:
+            if rerun_id := checkpoint.rerun_metadata.get("id"):
+                rerun_ids_to_score[rerun_id].append(checkpoint)
+
+        rerun_rows = []
+        for rerun_id, checkpoints in sorted(
+            rerun_ids_to_score.items(), key=lambda x: x[0], reverse=True
+        ):
+            # We want to show how many inputs performed better in this re-run ideally
+            # For now let's show score and then change it up
+            row: dict[str, Any] = {"rerun_id": rerun_id}
+            rerun_input_hashes: set[str] = set()
+            for checkpoint in checkpoints:
+                rerun_input_hashes.add(checkpoint.get_input_hash())
+                for output_name, output_score in checkpoint.scores.items():
+                    if output_name not in row:
+                        row[output_name] = output_score.score
+                    else:
+                        row[output_name] += output_score.score
+            row["num_checkpoints_used"] = len(checkpoints)
+            row["input_diversity"] = len(input_hashes)
+            rerun_rows.append(row)
+        output_table(rerun_rows, title="Rerun stats")
+
         for output_name in sorted(output_names_to_score):
-            output_display_name = (
-                output_name if output_name != TASK_OUTPUT_KEY else "Task output"
-            )
             while scored_checkpoints[-1].created_at.date() <= date_to_use:
                 total_score = 0.0
                 num_checkpoints_used = 0
