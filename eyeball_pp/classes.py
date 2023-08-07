@@ -122,3 +122,24 @@ class OutputScorer(Protocol):
         intermediary_state: Optional[dict[str, str]] = None,
     ) -> MultiOutputScores:
         ...
+
+
+@dataclass
+class GraderFeedback:
+    score: float
+    response: str
+
+    def as_dict(self):
+        return {"score": self.score, "response": self.response}
+
+    @staticmethod
+    def from_dict(data):
+        return GraderFeedback(
+            score=data["score"], response=data["response"]
+        )
+
+    def __str__(self) -> str:
+        if self.score:
+            return f"{self.score} ({self.response})"
+        else:
+            return f"{self.response}"
