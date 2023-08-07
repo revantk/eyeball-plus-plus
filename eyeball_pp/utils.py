@@ -1,3 +1,4 @@
+from datetime import datetime
 import os
 from typing import Any, Optional, Sequence
 from collections import OrderedDict, defaultdict
@@ -121,3 +122,17 @@ def get_score_map(
             if node not in score_map:
                 score_map[node] = 0.0
     return score_map
+
+
+def time_range_to_str(start_time: datetime, end_time: datetime) -> str:
+    if start_time.date() == end_time.date():
+        return f"{start_time.strftime('%d %b %H:%M')} - {end_time.strftime('%H:%M')}"
+    else:
+        return f"{start_time.strftime('%d %b')} - {end_time.strftime('%d %b')}"
+
+
+def time_to_str(time: datetime) -> str:
+    if time.year != datetime.now().year:
+        return time.strftime("%d %b %Y %H:%M")
+    else:
+        return time.strftime("%d %b %H:%M")

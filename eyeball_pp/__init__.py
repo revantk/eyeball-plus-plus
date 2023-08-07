@@ -10,6 +10,7 @@ from .eval import (
     compare_recorded_checkpoints,
     delete_checkpoints_for_input_vars,
     calculate_system_health,
+    start_recording_session,
     Evaluator,
 )
 
@@ -39,4 +40,5 @@ __all__ = [
     "OutputScore",
     "calculate_system_health",
     "record_intermediary_state",
+    "start_recording_session",
 ]

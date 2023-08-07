@@ -26,6 +26,7 @@ from .classes import (
 )
 
 import random
+from statistics import variance
 import threading
 from typing import (
     Callable,
@@ -42,6 +43,7 @@ from dataclasses import dataclass
 import dataclasses
 import datetime
 from .utils import get_score_map, get_user_input, output_table
+from .system_state import bucketize_checkpoints
 
 GREEN = "\x1b[32m"
 ORANGE = "\x1b[33m"
@@ -1029,6 +1031,35 @@ class Evaluator:
             print(f"Not enough checkpoints with comparisons to calculate system health")
             return
 
+        buckets_to_checkpoints = bucketize_checkpoints(scored_checkpoints)
+        bucketed_rows = []
+        for bucket, checkpoints in buckets_to_checkpoints.items():
+            row = {"bucket": str(bucket)}
+            for output_name in output_names_to_score:
+                num_checkpoints_used = 0
+                num_successes = 0
+                for checkpoint in checkpoints:
+                    if output_name in checkpoint.scores:
+                        if checkpoint.scores[output_name].score > 0.5:
+                            num_successes += 1
+                        num_checkpoints_used += 1
+                if num_checkpoints_used > 0:
+                    row[
+                        output_name
+                    ] = f"{num_successes}/{num_checkpoints_used} outputs matched the objective"
+                if num_checkpoints_used > 1:
+                    output_variance = variance(
+                        [1] * num_successes
+                        + [0] * (num_checkpoints_used - num_successes)
+                    )
+                    row[f"{output_name} variance"] = f"{output_variance:.2f}"
+            if len(row) > 1:
+                bucketed_rows.append(row)
+        output_table(
+            bucketed_rows,
+            title=f"System health by bucket",
+        )
+
         rolling_averages: list[dict[str, Any]] = []
 
         date_to_use = datetime.datetime.utcnow().date()
@@ -1195,3 +1226,4 @@ compare_recorded_checkpoints = _default_evaluator.compare_recorded_checkpoints
 delete_checkpoints_for_input_vars = _default_evaluator.delete_checkpoints_for_input_vars
 calculate_system_health = _default_evaluator.calculate_system_health
 record_intermediary_state = _default_evaluator.record_intermediary_state
+start_recording_session = _default_evaluator.start_recording_session
