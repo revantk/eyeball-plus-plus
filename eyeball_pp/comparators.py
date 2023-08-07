@@ -1,6 +1,8 @@
 from dataclasses import dataclass, asdict
 import json
 import openai
+import os
+import tiktoken
 from typing import Optional, Any
 from .classes import (
     FeedbackResult,
@@ -38,11 +40,31 @@ def output_feedback_from_scores(
     return feedback
 
 
-@dataclass
-class LLMRequest:
-    objective: str
-    inputs: dict[str, str]
-    responses: list[dict[str, str]]
+def _execute_summarizer(
+    input_variables: dict[str, str],
+    content: str,
+) -> str:
+
+    @dataclass
+    class SummaryRequest:
+        inputs: dict[str, str]
+        content: str
+
+    system_msg = "You are a summarizer that summarizes content within the context of the input parameters. You provide a detailed summary that does not leave out any pieces of information that could be used in the context of the input. If you are unsure, you include the content in your summary."
+    summary_request = SummaryRequest(inputs=input_variables, content=content)
+    user_msg = f"""{json.dumps(asdict(summary_request))}
+    Tip: Be sure to leave in all the pieces of information that could be used in the context of the input. If you are unsure, you include the content in your summary.
+    """
+
+    response = openai.ChatCompletion.create(  # type: ignore
+        model="gpt-3.5-turbo-16k",
+        temperature=0.1,
+        messages=[
+            {"role": "system", "content": system_msg},
+            {"role": "user", "content": user_msg},
+        ],
+    )["choices"][0]["message"]["content"]
+    return response
 
 
 def _execute_comparator(
@@ -51,6 +73,13 @@ def _execute_comparator(
     older_checkpoint_response: str,
     newer_checkpoint_response: str,
 ) -> OutputFeedback:
+
+    @dataclass
+    class CompareRequest:
+        objective: str
+        inputs: dict[str, str]
+        responses: list[dict[str, str]]
+
     system_msg = "You are an evaluator trying to grade the response of two agents based on provided JSON data. Keeping the objectives and the inputs in mind, decide which response is better and provide a reason. You always use the function provided."
     responses = [
         {
@@ -62,7 +91,7 @@ def _execute_comparator(
             "response": newer_checkpoint_response,
         },
     ]
-    llm_request = LLMRequest(
+    llm_request = CompareRequest(
         objective=objective, inputs=input_variables, responses=responses
     )
     user_msg = f"""{json.dumps(asdict(llm_request))}
@@ -115,6 +144,31 @@ def _execute_comparator(
         return OutputFeedback(FeedbackResult.NEUTRAL, reason)
 
 
+def _execute_llm_operation(
+        objective: str,
+        input_variables: dict[str, str],
+        older_checkpoint_response: str,
+        newer_checkpoint_response: str
+) -> OutputFeedback:
+    token_encoding = tiktoken.get_encoding("cl100k_base")
+    token_count = len(token_encoding.encode(
+        older_checkpoint_response + newer_checkpoint_response))
+    COMPARISON_MAX_TOKEN_COUNT = int(os.environ.get('COMPARISON_MAX_TOKEN_COUNT', 6000))
+
+    if token_count > COMPARISON_MAX_TOKEN_COUNT:
+        older_checkpoint_response = _execute_summarizer(
+            input_variables, older_checkpoint_response)
+        newer_checkpoint_response = _execute_summarizer(
+            input_variables, newer_checkpoint_response)
+
+    return _execute_comparator(
+        objective=objective,
+        input_variables=input_variables,
+        older_checkpoint_response=older_checkpoint_response,
+        newer_checkpoint_response=newer_checkpoint_response,
+    )
+
+
 def model_graded_comparator(
     task_objective: str,
     input_variables: dict[str, str],
@@ -131,7 +185,7 @@ def model_graded_comparator(
             older_int_state = value
             newer_int_state = newer_checkpoint_intermediary_state[key]
             if objectives_intermediary_state and key in objectives_intermediary_state:
-                feedback[key] = _execute_comparator(
+                feedback[key] = _execute_llm_operation(
                     objective=objectives_intermediary_state[key],
                     input_variables=input_variables,
                     older_checkpoint_response=older_int_state,
