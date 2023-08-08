@@ -138,6 +138,10 @@ class Evaluator:
         if not self.running_in_notebook and hasattr(
             self.current_recorder_state, "recorder_checkpoint_id"
         ):
+            if self.mode == EvaluatorMode.RERUN_EXAMPLES:
+                yield None
+                return
+
             # This should not happen but if it does, we should not overwrite the previous checkpoint id
             # Instead we should set it to None so there is no confusion
             # If the user calls get_eval_params this will raise an error
@@ -553,6 +557,7 @@ class Evaluator:
                     with self.start_recording_session(
                         task_name=task_name,
                         checkpoint_id=recorder_checkpoint_id,
+                        checkpoint_id_to_rerun=checkpoint_to_rerun.checkpoint_id,
                     ):
                         self.recorder.record_eval_params(
                             task_name=task_name,
