@@ -714,8 +714,6 @@ class Evaluator:
         try:
             self.mode = EvaluatorMode.COMPARE_CHECKPOINTS
 
-            params_to_succesful_examples: dict[str, int] = defaultdict(int)
-
             num_comparisons = 0
             for idx, input_hash in enumerate(
                 tqdm(
@@ -875,30 +873,20 @@ class Evaluator:
                         else ""
                     )
 
-                    new_params_str = ",".join(
-                        f"{k}={v}" for k, v in newer_checkpoint.eval_params.items()
-                    )
-                    old_params_str = ",".join(
-                        f"{k}={v}" for k, v in older_checkpoint.eval_params.items()
-                    )
                     num_comparisons += 1
                     output_comparison_feedback = comparison_feedback[TASK_OUTPUT_KEY]
                     if output_comparison_feedback.result == FeedbackResult.NEUTRAL:
                         logger.debug(
                             f"{ORANGE}[neutral] task output is the same between checkpoints {older_checkpoint_id} {old_unique_params_str} & {newer_checkpoint_id} {new_unique_params_str} {END_CLR}"
                         )
-                        params_to_succesful_examples[new_params_str] += 1
-                        params_to_succesful_examples[old_params_str] += 1
                     elif output_comparison_feedback.result == FeedbackResult.NEGATIVE:
                         logger.debug(
                             f"{RED}[regression] task output was better in the older checkpoint {older_checkpoint_id} {old_unique_params_str} than {newer_checkpoint_id} {new_unique_params_str} {END_CLR}"
                         )
-                        params_to_succesful_examples[old_params_str] += 1
                     else:
                         logger.debug(
                             f"{GREEN}[improvement] task output improved from checkpoint {older_checkpoint_id} {old_unique_params_str} to {newer_checkpoint_id} {new_unique_params_str}{END_CLR}"
                         )
-                        params_to_succesful_examples[new_params_str] += 1
                     if should_record_comparison:
                         self.recorder.record_comparison_result(
                             task_name=task_name,
@@ -909,17 +897,6 @@ class Evaluator:
                                 feedback=comparison_feedback,
                             ),
                         )
-
-            if params_to_succesful_examples:
-                print("\nYour most sucessful params:")
-                for params, num_successes in sorted(
-                    params_to_succesful_examples.items(),
-                    key=lambda x: x[1],
-                    reverse=True,
-                ):
-                    if params == "":
-                        params = "default"
-                    print(f"{params}: {num_successes}/{num_comparisons} successes")
 
             self.calculate_system_health(task_name=task_name)
 
@@ -1081,6 +1058,7 @@ class Evaluator:
             for output_name in output_names_to_score:
                 num_checkpoints_used = 0
                 num_successes = 0
+                params_used: set[str] = set()
                 input_hash_to_score: dict[str, list[float]] = {}
                 for checkpoint in checkpoints:
                     if output_name in checkpoint.scores:
@@ -1093,6 +1071,13 @@ class Evaluator:
                         input_hash_to_score[input_hash].append(
                             checkpoint.scores[output_name].score
                         )
+                        if checkpoint.eval_params:
+                            keys = sorted(checkpoint.eval_params.keys())
+                            params_used.add(
+                                "\n".join(
+                                    f"{k}={checkpoint.eval_params[k]}" for k in keys
+                                )
+                            )
                 if num_checkpoints_used > 0:
                     percent = float(num_successes) / float(num_checkpoints_used) * 100.0
                     column_name = (
@@ -1115,8 +1100,10 @@ class Evaluator:
                                 num_inputs_with_variance += 1
                         if num_inputs_with_variance > 0:
                             row[
-                                "Output Variance for the same input\n(higher value implies unpredictability)"
+                                "Output Variance\n(higher value ⇒ unpredictable system)"
                             ] = str(total_variance / float(num_inputs_with_variance))
+                        if len(params_used) == 1:
+                            row["Params"] = params_used.pop()
             if len(row) > 1:
                 system_health_by_run_history.append(row)
         output_table(
@@ -1244,7 +1231,7 @@ class Evaluator:
                 )
                 abs_path = os.path.abspath(per_input_filename)
                 file_link = f"[link=file://{abs_path}]per_input_breakdown.md[/link]"
-                print(f"Per input breakdown can be found here: {file_link}")
+                print(f"\nA per input breakdown can be found here: {file_link}")
             else:
                 output_table(
                     input_specific_rows,

@@ -48,7 +48,7 @@ def output_table(
                 if column_name not in column_names:
                     column_names.append(column_name)
 
-    table = Table(title=title)
+    table = Table(title=title, show_lines=True, title_justify="left")
     md_data = f"| {' | '.join(column_names)} |\n"
     md_data += "| " + " | ".join(["---"] * len(column_names)) + " |\n"
 
