@@ -6,6 +6,7 @@ import json
 import os
 import types
 import logging
+from rich import print
 
 from eyeball_pp.graders import model_based_grader
 from .recorders import (
@@ -47,7 +48,7 @@ from functools import wraps
 from dataclasses import dataclass
 import dataclasses
 import datetime
-from .utils import get_score_map, get_user_input, output_table
+from .utils import get_score_map, get_user_input, output_table, time_to_str
 from .system_state import bucketize_checkpoints
 from tqdm import tqdm
 
@@ -714,13 +715,11 @@ class Evaluator:
             self.mode = EvaluatorMode.COMPARE_CHECKPOINTS
 
             params_to_succesful_examples: dict[str, int] = defaultdict(int)
-            rerun_to_succesful_examples: dict[str, int] = defaultdict(int)
 
             num_comparisons = 0
             for idx, input_hash in enumerate(
                 tqdm(
                     input_hashes_list,
-                    desc="Inputs",
                     bar_format="{l_bar}{bar}|{n_fmt}/{total_fmt}",
                 )
             ):
@@ -882,20 +881,7 @@ class Evaluator:
                     old_params_str = ",".join(
                         f"{k}={v}" for k, v in older_checkpoint.eval_params.items()
                     )
-
-                    rerun_id_new = (
-                        newer_checkpoint.rerun_metadata.get("id")
-                        if newer_checkpoint.rerun_metadata is not None
-                        else None
-                    )
-                    rerun_id_old = (
-                        older_checkpoint.rerun_metadata.get("id")
-                        if older_checkpoint.rerun_metadata is not None
-                        else None
-                    )
-
                     num_comparisons += 1
-
                     output_comparison_feedback = comparison_feedback[TASK_OUTPUT_KEY]
                     if output_comparison_feedback.result == FeedbackResult.NEUTRAL:
                         logger.debug(
@@ -903,24 +889,16 @@ class Evaluator:
                         )
                         params_to_succesful_examples[new_params_str] += 1
                         params_to_succesful_examples[old_params_str] += 1
-                        if rerun_id_new is not None:
-                            rerun_to_succesful_examples[rerun_id_new] += 1
-                        if rerun_id_old is not None:
-                            rerun_to_succesful_examples[rerun_id_old] += 1
                     elif output_comparison_feedback.result == FeedbackResult.NEGATIVE:
                         logger.debug(
                             f"{RED}[regression] task output was better in the older checkpoint {older_checkpoint_id} {old_unique_params_str} than {newer_checkpoint_id} {new_unique_params_str} {END_CLR}"
                         )
                         params_to_succesful_examples[old_params_str] += 1
-                        if rerun_id_old is not None:
-                            rerun_to_succesful_examples[rerun_id_old] += 1
                     else:
                         logger.debug(
                             f"{GREEN}[improvement] task output improved from checkpoint {older_checkpoint_id} {old_unique_params_str} to {newer_checkpoint_id} {new_unique_params_str}{END_CLR}"
                         )
                         params_to_succesful_examples[new_params_str] += 1
-                        if rerun_id_new is not None:
-                            rerun_to_succesful_examples[rerun_id_new] += 1
                     if should_record_comparison:
                         self.recorder.record_comparison_result(
                             task_name=task_name,
@@ -932,18 +910,6 @@ class Evaluator:
                             ),
                         )
 
-            print("\nSummary:")
-            print("---------")
-            if len(rerun_to_succesful_examples) > 0:
-                print("Your most successful re-runs:")
-                for rerun_id, num_successes in sorted(
-                    rerun_to_succesful_examples.items(),
-                    key=lambda x: x[1],
-                    reverse=True,
-                ):
-                    print(
-                        f"{rerun_id}: {num_successes}/{len(input_hashes_list)} successes"
-                    )
             if params_to_succesful_examples:
                 print("\nYour most sucessful params:")
                 for params, num_successes in sorted(
@@ -1069,10 +1035,10 @@ class Evaluator:
             print(f"Not enough checkpoints with comparisons to calculate system health")
             return
         scored_checkpoints.sort(key=lambda x: x.checkpoint_id, reverse=True)
-        rolling_averages: list[dict[str, Any]] = []
+        system_health_by_date: list[dict[str, Any]] = []
         date_to_use = datetime.datetime.utcnow().date()
 
-        rolling_averages = []
+        system_health_by_date = []
         while scored_checkpoints[-1].created_at.date() <= date_to_use:
             num_successes = 0.0
             num_checkpoints_used = 0
@@ -1091,25 +1057,26 @@ class Evaluator:
                         num_checkpoints_used += 1
                         input_hash_set.add(checkpoint.get_input_hash())
 
-            rolling_averages.append(
+            system_health_by_date.append(
                 {
-                    "date": date_to_use.isoformat(),
-                    "sucess percentage": f"{float(num_successes) / float(num_checkpoints_used) * 100.0: .1f}%",
-                    "# checkpoints": num_checkpoints_used,
-                    "# unique inputs": len(input_hash_set),
+                    "Date": time_to_str(date_to_use),
+                    "Results": f"{float(num_successes) / float(num_checkpoints_used) * 100.0: .1f}% success ({num_successes}/{num_checkpoints_used})",
+                    "Stats": f"{num_checkpoints_used} datapoints, {len(input_hash_set)} unique inputs",
                 }
             )
             date_to_use -= datetime.timedelta(days=plotting_frequency_in_days)
 
         output_table(
-            rolling_averages,
-            title=f"Ovearall system health for task: {task_name}",
-            markdown_file=os.path.join(self.data_dir, task_name, "system_health.md"),
+            system_health_by_date,
+            title=f"System health for task: '{task_name}' (by Date)",
+            markdown_file=os.path.join(
+                self.data_dir, task_name, "system_health_by_date.md"
+            ),
         )
         buckets_to_checkpoints = bucketize_checkpoints(scored_checkpoints)
-        bucketed_rows = []
+        system_health_by_run_history = []
         for bucket, checkpoints in buckets_to_checkpoints.items():
-            row = {"run history": str(bucket)}
+            row = {"Run": str(bucket)}
 
             for output_name in output_names_to_score:
                 num_checkpoints_used = 0
@@ -1128,12 +1095,18 @@ class Evaluator:
                         )
                 if num_checkpoints_used > 0:
                     percent = float(num_successes) / float(num_checkpoints_used) * 100.0
+                    column_name = (
+                        "Results"
+                        if output_name == TASK_OUTPUT_KEY
+                        else f"{output_name}"
+                    )
                     row[
-                        output_name
-                    ] = f"{percent: .1f}% ({num_successes}/{num_checkpoints_used}) runs were successful"
+                        column_name
+                    ] = f"{percent: .1f}% success ({num_successes}/{num_checkpoints_used})"
 
                     if output_name == TASK_OUTPUT_KEY:
-                        row["# unique inputs run"] = str(len(input_hash_to_score))
+                        stats = f"{num_checkpoints_used} datapoints, {len(input_hash_to_score)} unique inputs"
+                        row["Stats"] = stats
                         total_variance = 0.0
                         num_inputs_with_variance = 0
                         for input_hash, score_list in input_hash_to_score.items():
@@ -1142,14 +1115,16 @@ class Evaluator:
                                 num_inputs_with_variance += 1
                         if num_inputs_with_variance > 0:
                             row[
-                                "variance in output for the same input\n(higher is worse)"
+                                "Output Variance for the same input\n(higher value implies unpredictability)"
                             ] = str(total_variance / float(num_inputs_with_variance))
             if len(row) > 1:
-                bucketed_rows.append(row)
+                system_health_by_run_history.append(row)
         output_table(
-            bucketed_rows,
-            title="System health broken down by run history",
-            markdown_file=os.path.join(self.data_dir, task_name, "run_history.md"),
+            system_health_by_run_history,
+            title=f"System health for task: '{task_name}' (by Run History)",
+            markdown_file=os.path.join(
+                self.data_dir, task_name, "system_health_by_run_history.md"
+            ),
         )
 
         # Group by reruns if they exist
@@ -1258,13 +1233,18 @@ class Evaluator:
                     )
                 input_specific_rows.append(row_data)
             if output_name == TASK_OUTPUT_KEY:
+                per_input_filename = os.path.join(
+                    self.data_dir, task_name, "per_input_breakdown.md"
+                )
                 output_table(
                     input_specific_rows,
                     title=f"Task success breakdown by input",
-                    markdown_file=os.path.join(
-                        self.data_dir, task_name, f"{output_name}_input_breakdown.md"
-                    ),
+                    markdown_file=per_input_filename,
+                    print_table=False,
                 )
+                abs_path = os.path.abspath(per_input_filename)
+                file_link = f"[link=file://{abs_path}]per_input_breakdown.md[/link]"
+                print(f"Per input breakdown can be found here: {file_link}")
             else:
                 output_table(
                     input_specific_rows,

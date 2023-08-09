@@ -1,6 +1,6 @@
-from datetime import datetime
+from datetime import datetime, date
 import os
-from typing import Any, Optional, Sequence
+from typing import Any, Optional, Sequence, Union
 from collections import OrderedDict, defaultdict
 from rich.table import Table
 from rich.console import Console
@@ -35,8 +35,12 @@ def output_table(
     markdown_file: Optional[str] = None,
     title: Optional[str] = None,
     column_names: Optional[list[str]] = None,
+    print_table: bool = True,
 ):
     """Outputs a table to the terminal and writes it as markdown to a file if markdown_file is provided."""
+    if len(rows) == 0:
+        return
+
     if column_names is None:
         column_names = []
         for row in rows:
@@ -44,7 +48,7 @@ def output_table(
                 if column_name not in column_names:
                     column_names.append(column_name)
 
-    table = Table(title=title, title_justify="left")
+    table = Table(title=title)
     md_data = f"| {' | '.join(column_names)} |\n"
     md_data += "| " + " | ".join(["---"] * len(column_names)) + " |\n"
 
@@ -60,9 +64,10 @@ def output_table(
         table.add_row(*column_value_strs)
         md_data += f"| {' | '.join(column_value_strs)} |\n"
 
-    print()
-    console = Console()
-    console.print(table)
+    if print_table:
+        print()
+        console = Console()
+        console.print(table)
 
     if markdown_file is not None:
         dir = os.path.dirname(markdown_file)
@@ -132,8 +137,10 @@ def time_range_to_str(start_time: datetime, end_time: datetime) -> str:
         return f"{start_time.strftime('%d %b')} - {end_time.strftime('%d %b')}"
 
 
-def time_to_str(time: datetime) -> str:
+def time_to_str(time: Union[datetime, date]) -> str:
+    hm_format = "%H:%M" if type(time) == datetime else ""
+
     if time.year != datetime.now().year:
-        return time.strftime("%d %b %Y %H:%M")
+        return time.strftime(f"%d %b %Y {hm_format}")
     else:
-        return time.strftime("%d %b %H:%M")
+        return time.strftime(f"%d %b {hm_format}")
