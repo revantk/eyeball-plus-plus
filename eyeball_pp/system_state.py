@@ -59,19 +59,29 @@ def bucketize_checkpoints(
         if checkpoint.rerun_metadata:
             rerun_ids.append(checkpoint.rerun_metadata["id"])
 
-    buckets = get_recent_system_states(since, till, rerun_ids)
+    if till is not None:
+        till = till + timedelta(days=1)
 
-    # TODO: improve this by sorting the checkpoints by created_at
-    for bucket in buckets:
+    buckets = get_recent_system_states(since=since, till=till, rerun_ids=rerun_ids)
+
+    already_bucketized: set[str] = set()
+
+    for bucket in reversed(buckets):
         for checkpoint in checkpoints:
-            if (
-                bucket.rerun_id is not None
-                and checkpoint.rerun_metadata
-                and checkpoint.rerun_metadata["id"] == bucket.rerun_id
-            ):
-                checkpoints_by_state[bucket].append(checkpoint)
+            if checkpoint.checkpoint_id in already_bucketized:
+                continue
+
+            # For a checkpoint which has a rerun, it should be bucketized in a bucket with a rerun id
+            if checkpoint.rerun_metadata:
+                if (
+                    bucket.rerun_id is not None
+                    and checkpoint.rerun_metadata["id"] == bucket.rerun_id
+                ):
+                    checkpoints_by_state[bucket].append(checkpoint)
+                    already_bucketized.add(checkpoint.checkpoint_id)
             elif bucket.start_time <= checkpoint.created_at < bucket.end_time:
                 checkpoints_by_state[bucket].append(checkpoint)
+                already_bucketized.add(checkpoint.checkpoint_id)
 
     return checkpoints_by_state
 
@@ -107,11 +117,17 @@ def get_recent_system_states(
             rerun_time = datetime.fromisoformat(rerun_id)
             if rerun_time < end_time:
                 rerun_index += 1
-                end_time = datetime.fromisoformat(rerun_id)
                 # System state till rerun
-                system_sates.append(SystemState(start_time, end_time))
+                system_sates.append(SystemState(start_time, rerun_time))
                 # System state with rerun
-                system_sates.append(SystemState(end_time, end_time, rerun_id=rerun_id))
+                end_time = rerun_time + timedelta(milliseconds=1)
+                system_sates.append(
+                    SystemState(
+                        rerun_time,
+                        end_time,
+                        rerun_id=rerun_id,
+                    )
+                )
             else:
                 system_sates.append(SystemState(start_time, end_time))
         else:

@@ -1,3 +1,3 @@
-| date | rolling_average | num_checkpoints_used | input_diversity |
+| date | sucess percentage | # checkpoints | # unique inputs |
 | --- | --- | --- | --- |
-| 2023-08-09 |  0.50 | 4 | 2 |
+| 2023-08-09 |  85.7% | 7 | 3 |

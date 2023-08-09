@@ -1,9 +1,0 @@
-___output___:
-  message: Both agents, Andrew and Barry, provided the same response, which is 'I
-    don't know.' Without context, this is the best possible answer they could give.
-  result: NEUTRAL
-context:
-  message: Both Andrew and Barry provided the same response which does not directly
-    answer the question about the color of the dog. Therefore, neither response is
-    better than the other.
-  result: NEUTRAL

@@ -1,0 +1,10 @@
+task_output:
+  message: 'Score {''task_output'': OutputScore(score=0.0, message=''{\n  "evaluations":
+    [\n    {\n      "name": "Criteria.CORRECTNESS",\n      "rating": "No",\n      "reason":
+    "The agent\''s response is not accurate. The color of the fox was not provided,
+    hence the agent should not have responded with \''I don\''t know.\''"\n    }\n  ]\n}'')}
+    is worse than {''task_output'': OutputScore(score=0.0, message=''{\n  "evaluations":
+    [\n    {\n      "name": "Criteria.CORRECTNESS",\n      "rating": "No",\n      "reason":
+    "The agent\''s response is not accurate. The color of the fox was not provided,
+    hence the agent should not have responded with \''I don\''t know.\''"\n    }\n  ]\n}'')}'
+  result: NEGATIVE

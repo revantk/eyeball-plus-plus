@@ -22,7 +22,7 @@ def output_feedback_from_scores(
         if newer_scores is None:
             continue
 
-        if older_scores == newer_score:
+        if older_score == newer_score:
             feedback[output_name] = OutputFeedback(
                 FeedbackResult.NEUTRAL,
                 f"Score {older_scores} is equal to {newer_scores}",

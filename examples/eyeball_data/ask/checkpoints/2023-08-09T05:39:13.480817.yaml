@@ -1,0 +1,17 @@
+eval_params:
+  temperature: 0.2
+input_hash: 9e2f702d1b51395033fce98439681f0f146f3593925f35c92e69174035c80387
+input_variables:
+  question: '"What color is the dog?"'
+intermediary_state:
+  context: The lazy dog which is not brown jumps over the quick brown fox
+output: '"I don''t know."'
+rerun_metadata:
+  id: '2023-08-09T05:39:12.737591'
+score:
+  task_output:
+    message: "{\n  \"evaluations\": [\n    {\n      \"name\": \"Criteria.CORRECTNESS\"\
+      ,\n      \"rating\": \"Yes\",\n      \"reason\": \"The response is correct as\
+      \ the agent doesn't have the information to determine the color of the dog.\"\
+      \n    }\n  ]\n}"
+    score: 1.0

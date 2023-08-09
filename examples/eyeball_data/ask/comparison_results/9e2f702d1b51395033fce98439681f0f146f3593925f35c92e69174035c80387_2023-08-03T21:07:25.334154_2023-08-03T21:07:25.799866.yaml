@@ -1,9 +1,0 @@
-___output___:
-  message: Both agents, Andrew and Barry, gave the same response of 'I don't know.'
-    to the question 'What color is the dog?'. Since there is no context provided to
-    answer the question, both responses are equally valid.
-  result: NEUTRAL
-context:
-  message: Both Andrew and Barry provided the same response which does not directly
-    answer the question about the color of the dog.
-  result: NEUTRAL

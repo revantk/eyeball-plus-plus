@@ -56,7 +56,7 @@ BOLD = "\x1b[1m"
 UNDERLINE = "\x1b[4m"
 ITALIC = "\x1b[3m"
 HEADING_BG = "\x1b[103m"
-
+SUCCESS_CUTOFF = 0.5
 END_CLR = "\x1b[0m"
 
 
@@ -701,17 +701,11 @@ class Evaluator:
         if output_grader is None:
             output_grader = model_based_grader
 
-        if output_comparator is None and output_grader is None:
-            output_comparator = model_graded_comparator
-            assert (
-                task_objective is not None
-            ), "Must provide an objective to compare or an output comparator"
-
         input_hashes_list = self.recorder.get_input_hashes(task_name)
         random.shuffle(input_hashes_list)
         input_hashes_list = input_hashes_list[:num_input_hashes]
 
-        print(f"Comparing {len(input_hashes_list)} inputs for task:`{task_name}`")
+        print(f"Evaluating {len(input_hashes_list)} inputs for task:`{task_name}`")
         try:
             self.mode = EvaluatorMode.COMPARE_CHECKPOINTS
 
@@ -740,13 +734,18 @@ class Evaluator:
 
                 if output_grader is not None:
                     # TODO: change output scorer to score multiple output types
-                    print(f"\nInput #{idx} - Scoring {len(checkpoint_ids)} checkpoints")
+                    print(f"\nInput #{idx} - Grading {len(checkpoint_ids)} checkpoints")
                     for checkpoint_id in checkpoint_ids:
                         checkpoint_to_score = checkpoints[checkpoint_id]
-                        if use_cached_scores and checkpoint_to_score.scores:
+                        if (
+                            use_cached_scores
+                            and checkpoint_to_score.scores
+                            and TASK_OUTPUT_KEY in checkpoint_to_score.scores
+                        ):
                             print(
-                                f"Using cached score for {checkpoint_id}: {checkpoint_to_score.scores}"
+                                f"Using cached score for {checkpoint_id}: {checkpoint_to_score.scores[TASK_OUTPUT_KEY].score}"
                             )
+                            continue
 
                         assert checkpoint_to_score.output is not None
                         output_score = output_grader(
@@ -764,7 +763,7 @@ class Evaluator:
                             scores=multi_output_scores,
                         )
                         checkpoint_to_score.scores = multi_output_scores
-                        print(f"Scored {checkpoint_id}: {output_score}")
+                        print(f"Scored {checkpoint_id}: {output_score.score}")
 
                 if len(checkpoint_ids) < 2:
                     continue
@@ -945,7 +944,7 @@ class Evaluator:
         task_name: Optional[str] = None,
     ) -> None:
         task_name = self._get_recorded_task_name(task_name=task_name)
-        output_names_to_score: set[str] = set()
+        output_names_to_score: set[str] = set([TASK_OUTPUT_KEY])
 
         # calculate rolling average if we have output scores for the last num_samples checkpoints
         input_hashes = self.recorder.get_input_hashes(task_name=task_name)
@@ -994,6 +993,7 @@ class Evaluator:
                     )
                 )
             for cr in comparison_results:
+                print(f"Feedback: {cr.feedback.keys()}")
                 output_names_to_score |= set(cr.feedback.keys())
             for output_name in output_names_to_score:
                 edges: dict[str, dict[str, float]] = defaultdict(lambda: dict())
@@ -1045,40 +1045,89 @@ class Evaluator:
         if len(scored_checkpoints) == 0:
             print(f"Not enough checkpoints with comparisons to calculate system health")
             return
+        scored_checkpoints.sort(key=lambda x: x.checkpoint_id, reverse=True)
+        rolling_averages: list[dict[str, Any]] = []
+        date_to_use = datetime.datetime.utcnow().date()
 
+        rolling_averages = []
+        while scored_checkpoints[-1].created_at.date() <= date_to_use:
+            num_successes = 0.0
+            num_checkpoints_used = 0
+            input_hash_set = set()
+            for checkpoint in scored_checkpoints:
+                if num_checkpoints_used >= num_samples:
+                    break
+
+                if checkpoint.created_at.date() <= date_to_use:
+                    if (
+                        checkpoint.scores is not None
+                        and TASK_OUTPUT_KEY in checkpoint.scores
+                    ):
+                        if checkpoint.scores[TASK_OUTPUT_KEY].score > SUCCESS_CUTOFF:
+                            num_successes += 1
+                        num_checkpoints_used += 1
+                        input_hash_set.add(checkpoint.get_input_hash())
+
+            rolling_averages.append(
+                {
+                    "date": date_to_use.isoformat(),
+                    "sucess percentage": f"{float(num_successes) / float(num_checkpoints_used) * 100.0: .1f}%",
+                    "# checkpoints": num_checkpoints_used,
+                    "# unique inputs": len(input_hash_set),
+                }
+            )
+            date_to_use -= datetime.timedelta(days=plotting_frequency_in_days)
+
+        output_table(
+            rolling_averages,
+            title=f"Ovearll system health for task: {task_name}",
+            markdown_file=os.path.join(self.data_dir, task_name, "system_health.md"),
+        )
         buckets_to_checkpoints = bucketize_checkpoints(scored_checkpoints)
         bucketed_rows = []
         for bucket, checkpoints in buckets_to_checkpoints.items():
-            row = {"bucket": str(bucket)}
+            row = {"run history": str(bucket)}
+
             for output_name in output_names_to_score:
                 num_checkpoints_used = 0
                 num_successes = 0
+                input_hash_to_score: dict[str, list[float]] = {}
                 for checkpoint in checkpoints:
                     if output_name in checkpoint.scores:
-                        if checkpoint.scores[output_name].score > 0.5:
+                        if checkpoint.scores[output_name].score > SUCCESS_CUTOFF:
                             num_successes += 1
                         num_checkpoints_used += 1
+                        input_hash = checkpoint.get_input_hash()
+                        if input_hash not in input_hash_to_score:
+                            input_hash_to_score[input_hash] = []
+                        input_hash_to_score[input_hash].append(
+                            checkpoint.scores[output_name].score
+                        )
                 if num_checkpoints_used > 0:
+                    percent = float(num_successes) / float(num_checkpoints_used) * 100.0
                     row[
                         output_name
-                    ] = f"{num_successes}/{num_checkpoints_used} outputs matched the objective"
-                if num_checkpoints_used > 1:
-                    output_variance = variance(
-                        [1] * num_successes
-                        + [0] * (num_checkpoints_used - num_successes)
-                    )
-                    row[f"{output_name} variance"] = f"{output_variance:.2f}"
+                    ] = f"{percent: .1f}% ({num_successes}/{num_checkpoints_used}) runs were successful"
+
+                    if output_name == TASK_OUTPUT_KEY:
+                        row["# unique inputs run"] = str(len(input_hash_to_score))
+                        total_variance = 0.0
+                        num_inputs_with_variance = 0
+                        for input_hash, score_list in input_hash_to_score.items():
+                            if len(score_list) > 1:
+                                total_variance += variance(score_list)
+                                num_inputs_with_variance += 1
+                        if num_inputs_with_variance > 0:
+                            row[
+                                "variance in output for the same input\n(higher is worse)"
+                            ] = str(total_variance / float(num_inputs_with_variance))
             if len(row) > 1:
                 bucketed_rows.append(row)
         output_table(
             bucketed_rows,
-            title=f"System health by bucket",
+            title="System health broken down by run history",
+            markdown_file=os.path.join(self.data_dir, task_name, "run_history.md"),
         )
-
-        rolling_averages: list[dict[str, Any]] = []
-
-        date_to_use = datetime.datetime.utcnow().date()
-        scored_checkpoints.sort(key=lambda x: x.checkpoint_id, reverse=True)
 
         # Group by reruns if they exist
         rerun_ids_to_score: dict[str, list[Checkpoint]] = defaultdict(list)
@@ -1086,101 +1135,63 @@ class Evaluator:
             if rerun_id := checkpoint.rerun_metadata.get("id"):
                 rerun_ids_to_score[rerun_id].append(checkpoint)
 
-        rerun_rows = []
-        for rerun_id, checkpoints in sorted(
-            rerun_ids_to_score.items(), key=lambda x: x[0], reverse=True
-        ):
-            # We want to show how many inputs performed better in this re-run ideally
-            # For now let's show score and then change it up
-            row: dict[str, Any] = {"rerun_id": rerun_id}
+        # rerun_rows = []
+        # for rerun_id, checkpoints in sorted(
+        #     rerun_ids_to_score.items(), key=lambda x: x[0], reverse=True
+        # ):
+        #     # We want to show how many inputs performed better in this re-run ideally
+        #     # For now let's show score and then change it up
+        #     row: dict[str, Any] = {"rerun_id": rerun_id}
 
-            # num_better, num_worse, num_same
-            output_feedback_status: dict[str, list[float]] = defaultdict(
-                lambda: [0.0, 0.0, 0.0, 0.0]
-            )
-            all_output_names: set[str] = set()
-            rerun_input_hashes: set[str] = set()
-            for checkpoint in checkpoints:
-                rerun_input_hashes.add(checkpoint.get_input_hash())
-                for output_name, output_score in checkpoint.scores.items():
-                    all_output_names.add(output_name)
-                    if (
-                        feedback_result := rerunid_to_checkpoint_feedback[rerun_id][
-                            checkpoint.checkpoint_id
-                        ]
-                    ) is not None:
-                        if feedback_result == FeedbackResult.POSITIVE:
-                            output_feedback_status[output_name][0] += 1.0
-                        elif feedback_result == FeedbackResult.NEGATIVE:
-                            output_feedback_status[output_name][1] += 1.0
-                        else:
-                            output_feedback_status[output_name][2] += 1.0
+        #     # num_better, num_worse, num_same
+        #     output_feedback_status: dict[str, list[float]] = defaultdict(
+        #         lambda: [0.0, 0.0, 0.0, 0.0]
+        #     )
+        #     all_output_names: set[str] = set()
+        #     rerun_input_hashes: set[str] = set()
+        #     for checkpoint in checkpoints:
+        #         rerun_input_hashes.add(checkpoint.get_input_hash())
+        #         for output_name, output_score in checkpoint.scores.items():
+        #             all_output_names.add(output_name)
+        #             if (
+        #                 feedback_result := rerunid_to_checkpoint_feedback[rerun_id][
+        #                     checkpoint.checkpoint_id
+        #                 ]
+        #             ) is not None:
+        #                 if feedback_result == FeedbackResult.POSITIVE:
+        #                     output_feedback_status[output_name][0] += 1.0
+        #                 elif feedback_result == FeedbackResult.NEGATIVE:
+        #                     output_feedback_status[output_name][1] += 1.0
+        #                 else:
+        #                     output_feedback_status[output_name][2] += 1.0
 
-                    output_feedback_status[output_name][3] += output_score.score
+        #             output_feedback_status[output_name][3] += output_score.score
 
-            for output_name in all_output_names:
-                num_better, num_worse, num_same, score = output_feedback_status[
-                    output_name
-                ]
-                total = int(num_better + num_worse + num_same)
-                trend_msg = ""
-                if num_better > 0:
-                    trend_msg += f"{int(num_better)}/{total} got better\n"
-                if num_worse > 0:
-                    trend_msg += f"{int(num_worse)}/{total} got worse\n"
-                if num_same > 0:
-                    trend_msg += f"{int(num_same)}/{total} stayed the same\n"
+        #     for output_name in all_output_names:
+        #         num_better, num_worse, num_same, score = output_feedback_status[
+        #             output_name
+        #         ]
+        #         total = int(num_better + num_worse + num_same)
+        #         trend_msg = ""
+        #         if num_better > 0:
+        #             trend_msg += f"{int(num_better)}/{total} got better\n"
+        #         if num_worse > 0:
+        #             trend_msg += f"{int(num_worse)}/{total} got worse\n"
+        #         if num_same > 0:
+        #             trend_msg += f"{int(num_same)}/{total} stayed the same\n"
 
-                if trend_msg:
-                    row[f"{output_name} trend"] = trend_msg
-                else:
-                    row[f"{output_name} relative score"] = score
+        #         if trend_msg:
+        #             row[f"{output_name} trend"] = trend_msg
+        #         else:
+        #             row[f"{output_name} relative score"] = score
 
-            row["num_checkpoints_used"] = len(checkpoints)
-            row["input_diversity"] = len(input_hashes)
+        #     row["num_checkpoints_used"] = len(checkpoints)
+        #     row["input_diversity"] = len(input_hashes)
 
-            rerun_rows.append(row)
-        output_table(rerun_rows, title="Rerun stats")
-
-        for output_name in sorted(output_names_to_score):
-            while scored_checkpoints[-1].created_at.date() <= date_to_use:
-                total_score = 0.0
-                num_checkpoints_used = 0
-                input_hash_set = set()
-                for checkpoint in scored_checkpoints:
-                    if num_checkpoints_used >= num_samples:
-                        break
-
-                    if checkpoint.created_at.date() <= date_to_use:
-                        if checkpoint.scores is not None:
-                            total_score += checkpoint.scores[output_name].score
-                            num_checkpoints_used += 1
-                            input_hash_set.add(checkpoint.get_input_hash())
-
-                rolling_averages.append(
-                    {
-                        "date": date_to_use.isoformat(),
-                        "rolling_average": total_score / float(num_checkpoints_used),
-                        "num_checkpoints_used": num_checkpoints_used,
-                        "input_diversity": len(input_hash_set),
-                    }
-                )
-                date_to_use -= datetime.timedelta(days=plotting_frequency_in_days)
-
-            output_table(
-                rolling_averages,
-                title=f"{output_name} system health (Rolling average of scores for the last {num_samples} checkpoints)",
-                column_names=[
-                    "date",
-                    "rolling_average",
-                    "num_checkpoints_used",
-                    "input_diversity",
-                ],
-                markdown_file=os.path.join(
-                    self.data_dir, task_name, "system_health.md"
-                ),
-            )
-
+        #     rerun_rows.append(row)
+        # output_table(rerun_rows, title="Rerun stats")
+        
+        for output_name in output_names_to_score:
             input_specific_rows: list[dict[str, str]] = []
             for input_hash, checkpoints in input_hash_to_checkpoints.items():
                 best_checkpoint: Optional[Checkpoint] = None
@@ -1223,7 +1234,19 @@ class Evaluator:
                         output_name=output_name
                     )
                 input_specific_rows.append(row_data)
-            output_table(input_specific_rows, title=f"{output_name} per input stats")
+            if output_name == TASK_OUTPUT_KEY:
+                output_table(
+                    input_specific_rows,
+                    title=f"Task success breakdown by input",
+                    markdown_file=os.path.join(
+                        self.data_dir, task_name, f"{output_name}_input_breakdown.md"
+                    ),
+                )
+            else:
+                output_table(
+                    input_specific_rows,
+                    title=f"Intermediary state: {output_name} breakdown by input",
+                )
 
 
 _default_evaluator = Evaluator()

@@ -1,0 +1,18 @@
+eval_params:
+  temperature: 0.2
+input_hash: 21cabd66aaed06837247fb1682a288e79354311e19a59e0144f92853f7d9f4fd
+input_variables:
+  question: '"What color is the bat ?"'
+intermediary_state:
+  context: The quick brown fox jumps over the lazy dog
+output: '"I don''t know."'
+rerun_metadata:
+  id: '2023-08-09T05:39:12.737591'
+score:
+  task_output:
+    message: "{\n  \"evaluations\": [\n    {\n      \"name\": \"Criteria.CORRECTNESS\"\
+      ,\n      \"rating\": \"Yes\",\n      \"reason\": \"The response is correct as\
+      \ the agent admitted to not knowing the color of the bat, which is a valid response\
+      \ given that the color of the bat was not provided in the question.\"\n    }\n\
+      \  ]\n}"
+    score: 1.0

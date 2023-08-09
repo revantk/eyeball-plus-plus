@@ -144,8 +144,8 @@ class Checkpoint:
         if output_name in self.scores:
             output_score = self.scores[output_name]
             msg += f"score: {output_score.score:.2f}"
-            if output_score.message:
-                msg += f" ({output_score.message})"
+            #            if output_score.message:
+            #                msg += f" ({output_score.message})"
             msg += "\n"
 
         params_str = ", ".join(f"{k}={v}" for k, v in self.eval_params.items())

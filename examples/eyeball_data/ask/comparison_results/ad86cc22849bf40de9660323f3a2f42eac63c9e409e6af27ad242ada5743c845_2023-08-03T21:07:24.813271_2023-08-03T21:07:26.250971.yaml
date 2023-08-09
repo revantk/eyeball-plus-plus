@@ -1,9 +1,0 @@
-___output___:
-  message: Both agents provided the same response, which is 'I don't know.' Without
-    context, it's impossible to determine the color of the fox, so both responses
-    are equally valid.
-  result: NEUTRAL
-context:
-  message: Both Andrew and Barry provided the same response which is relevant to the
-    question asked.
-  result: NEUTRAL

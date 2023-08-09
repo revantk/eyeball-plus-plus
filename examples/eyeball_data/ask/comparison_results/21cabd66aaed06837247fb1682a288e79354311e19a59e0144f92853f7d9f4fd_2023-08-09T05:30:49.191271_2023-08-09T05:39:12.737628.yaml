@@ -1,0 +1,11 @@
+task_output:
+  message: 'Score {''task_output'': OutputScore(score=1.0, message=''{\n  "evaluations":
+    [\n    {\n      "name": "Criteria.CORRECTNESS",\n      "rating": "Yes",\n      "reason":
+    "The agent\''s response is correct because without any context or specific information
+    about the bat, it\''s impossible to determine its color. Therefore, \''I don\''t
+    know\'' is an accurate response."\n    }\n  ]\n}'')} is equal to {''task_output'':
+    OutputScore(score=1.0, message=''{\n  "evaluations": [\n    {\n      "name": "Criteria.CORRECTNESS",\n      "rating":
+    "Yes",\n      "reason": "The response is correct as the agent admitted to not
+    knowing the color of the bat, which is a valid response given that the color of
+    the bat was not provided in the question."\n    }\n  ]\n}'')}'
+  result: NEUTRAL
