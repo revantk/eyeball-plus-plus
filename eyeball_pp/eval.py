@@ -1100,7 +1100,7 @@ class Evaluator:
                                 num_inputs_with_variance += 1
                         if num_inputs_with_variance > 0:
                             row[
-                                "Output Variance\n(higher value ⇒ unpredictable system)"
+                                "Output Variance (higher value ⇒ unpredictable system)"
                             ] = str(total_variance / float(num_inputs_with_variance))
                         if len(params_used) == 1:
                             row["Params"] = params_used.pop()
