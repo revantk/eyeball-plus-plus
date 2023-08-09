@@ -5,6 +5,7 @@ import inspect
 import json
 import os
 import types
+import logging
 
 from eyeball_pp.graders import model_based_grader
 from .recorders import (
@@ -48,6 +49,7 @@ import dataclasses
 import datetime
 from .utils import get_score_map, get_user_input, output_table
 from .system_state import bucketize_checkpoints
+from tqdm import tqdm
 
 GREEN = "\x1b[32m"
 ORANGE = "\x1b[33m"
@@ -58,6 +60,8 @@ ITALIC = "\x1b[3m"
 HEADING_BG = "\x1b[103m"
 SUCCESS_CUTOFF = 0.5
 END_CLR = "\x1b[0m"
+
+logger = logging.getLogger(__name__)
 
 
 @runtime_checkable
@@ -518,7 +522,7 @@ class Evaluator:
 
             print(f"Will rerun {len(input_hashes)} inputs for task:`{task_name}`")
 
-            for idx, input_hash in enumerate(input_hashes):
+            for idx, input_hash in tqdm(enumerate(input_hashes)):
                 recorder_checkpoint_id = datetime.datetime.utcnow().isoformat()
                 last_checkpoint = self._get_last_checkpoint(
                     task_name=task_name,
@@ -537,7 +541,7 @@ class Evaluator:
                     k: json.loads(v)
                     for k, v in checkpoint_to_rerun.get_input_variables().items()
                 }
-                print(
+                logger.debug(
                     f"\nRerunning input #{idx}:\n{checkpoint_to_rerun.get_input_var_str()}"
                 )
 
@@ -554,7 +558,7 @@ class Evaluator:
                                 eval_params=eval_params,
                                 rerun_metadata=rerun_metadata,
                             )
-                            print(f"Using eval params: {eval_params}")
+                            logger.debug(f"Using eval params: {eval_params}")
                             yield input_vars
                 else:
                     with self.start_recording_session(
@@ -713,7 +717,13 @@ class Evaluator:
             rerun_to_succesful_examples: dict[str, int] = defaultdict(int)
 
             num_comparisons = 0
-            for idx, input_hash in enumerate(input_hashes_list):
+            for idx, input_hash in enumerate(
+                tqdm(
+                    input_hashes_list,
+                    desc="Inputs",
+                    bar_format="{l_bar}{bar}|{n_fmt}/{total_fmt}",
+                )
+            ):
                 checkpoints_list = self.recorder.get_latest_checkpoints(
                     task_name,
                     input_hash,
@@ -734,15 +744,22 @@ class Evaluator:
 
                 if output_grader is not None:
                     # TODO: change output scorer to score multiple output types
-                    print(f"\nInput #{idx} - Grading {len(checkpoint_ids)} checkpoints")
-                    for checkpoint_id in checkpoint_ids:
+                    logger.debug(
+                        f"\nInput #{idx} - Grading {len(checkpoint_ids)} checkpoints"
+                    )
+                    for checkpoint_id in tqdm(
+                        checkpoint_ids,
+                        desc=f"Checkpoints for Input #{idx}",
+                        bar_format="{l_bar}{bar}|{n_fmt}/{total_fmt}",
+                        leave=False,
+                    ):
                         checkpoint_to_score = checkpoints[checkpoint_id]
                         if (
                             use_cached_scores
                             and checkpoint_to_score.scores
                             and TASK_OUTPUT_KEY in checkpoint_to_score.scores
                         ):
-                            print(
+                            logger.debug(
                                 f"Using cached score for {checkpoint_id}: {checkpoint_to_score.scores[TASK_OUTPUT_KEY].score}"
                             )
                             continue
@@ -763,7 +780,7 @@ class Evaluator:
                             scores=multi_output_scores,
                         )
                         checkpoint_to_score.scores = multi_output_scores
-                        print(f"Scored {checkpoint_id}: {output_score.score}")
+                        logger.debug(f"Scored {checkpoint_id}: {output_score.score}")
 
                 if len(checkpoint_ids) < 2:
                     continue
@@ -775,9 +792,13 @@ class Evaluator:
                     for i in range(len(checkpoint_ids) - 1)
                 ]
 
-                print(f"\nInput #{idx} - Running {len(to_compare)} comparison(s)")
+                logger.debug(
+                    f"\nInput #{idx} - Running {len(to_compare)} comparison(s)"
+                )
 
-                for newer_checkpoint_id, older_checkpoint_id in to_compare:
+                for newer_checkpoint_id, older_checkpoint_id in tqdm(
+                    to_compare, desc="Comparisons", disable=True
+                ):
                     newer_checkpoint = self.recorder.get_checkpoint(
                         task_name=task_name,
                         checkpoint_id=newer_checkpoint_id,
@@ -807,7 +828,7 @@ class Evaluator:
                             newer_checkpoint_id=newer_checkpoint_id,
                         )
                     ):
-                        print(f"Using cached comparison result for {input_hash}")
+                        logger.debug(f"Using cached comparison result for {input_hash}")
                         should_record_comparison = False
                         comparison_feedback = comparator_result.feedback
                     elif output_comparator is not None:
@@ -877,7 +898,7 @@ class Evaluator:
 
                     output_comparison_feedback = comparison_feedback[TASK_OUTPUT_KEY]
                     if output_comparison_feedback.result == FeedbackResult.NEUTRAL:
-                        print(
+                        logger.debug(
                             f"{ORANGE}[neutral] task output is the same between checkpoints {older_checkpoint_id} {old_unique_params_str} & {newer_checkpoint_id} {new_unique_params_str} {END_CLR}"
                         )
                         params_to_succesful_examples[new_params_str] += 1
@@ -887,14 +908,14 @@ class Evaluator:
                         if rerun_id_old is not None:
                             rerun_to_succesful_examples[rerun_id_old] += 1
                     elif output_comparison_feedback.result == FeedbackResult.NEGATIVE:
-                        print(
+                        logger.debug(
                             f"{RED}[regression] task output was better in the older checkpoint {older_checkpoint_id} {old_unique_params_str} than {newer_checkpoint_id} {new_unique_params_str} {END_CLR}"
                         )
                         params_to_succesful_examples[old_params_str] += 1
                         if rerun_id_old is not None:
                             rerun_to_succesful_examples[rerun_id_old] += 1
                     else:
-                        print(
+                        logger.debug(
                             f"{GREEN}[improvement] task output improved from checkpoint {older_checkpoint_id} {old_unique_params_str} to {newer_checkpoint_id} {new_unique_params_str}{END_CLR}"
                         )
                         params_to_succesful_examples[new_params_str] += 1
@@ -914,7 +935,7 @@ class Evaluator:
             print("\nSummary:")
             print("---------")
             if len(rerun_to_succesful_examples) > 0:
-                print("Your most sucessful re-runs:")
+                print("Your most successful re-runs:")
                 for rerun_id, num_successes in sorted(
                     rerun_to_succesful_examples.items(),
                     key=lambda x: x[1],
@@ -923,14 +944,16 @@ class Evaluator:
                     print(
                         f"{rerun_id}: {num_successes}/{len(input_hashes_list)} successes"
                     )
-
-            print("\nYour most sucessful params:")
-            for params, num_successes in sorted(
-                params_to_succesful_examples.items(), key=lambda x: x[1], reverse=True
-            ):
-                if params == "":
-                    params = "default"
-                print(f"{params}: {num_successes}/{num_comparisons} successes")
+            if params_to_succesful_examples:
+                print("\nYour most sucessful params:")
+                for params, num_successes in sorted(
+                    params_to_succesful_examples.items(),
+                    key=lambda x: x[1],
+                    reverse=True,
+                ):
+                    if params == "":
+                        params = "default"
+                    print(f"{params}: {num_successes}/{num_comparisons} successes")
 
             self.calculate_system_health(task_name=task_name)
 
@@ -1080,7 +1103,7 @@ class Evaluator:
 
         output_table(
             rolling_averages,
-            title=f"Ovearll system health for task: {task_name}",
+            title=f"Ovearall system health for task: {task_name}",
             markdown_file=os.path.join(self.data_dir, task_name, "system_health.md"),
         )
         buckets_to_checkpoints = bucketize_checkpoints(scored_checkpoints)
@@ -1190,7 +1213,7 @@ class Evaluator:
 
         #     rerun_rows.append(row)
         # output_table(rerun_rows, title="Rerun stats")
-        
+
         for output_name in output_names_to_score:
             input_specific_rows: list[dict[str, str]] = []
             for input_hash, checkpoints in input_hash_to_checkpoints.items():

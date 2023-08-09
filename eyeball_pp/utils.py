@@ -44,7 +44,7 @@ def output_table(
                 if column_name not in column_names:
                     column_names.append(column_name)
 
-    table = Table(title=title)
+    table = Table(title=title, title_justify="left")
     md_data = f"| {' | '.join(column_names)} |\n"
     md_data += "| " + " | ".join(["---"] * len(column_names)) + " |\n"
 
@@ -60,6 +60,7 @@ def output_table(
         table.add_row(*column_value_strs)
         md_data += f"| {' | '.join(column_value_strs)} |\n"
 
+    print()
     console = Console()
     console.print(table)
 
