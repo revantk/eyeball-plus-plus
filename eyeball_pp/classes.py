@@ -130,19 +130,6 @@ class OutputComparator(Protocol):
         ...
 
 
-# The output scorer is used to score the output of a model given the objective and inputs
-# The scorer should return a float with a higher value indicating a better output
-class OutputScorer(Protocol):
-    def __call__(
-        self,
-        objective: str,
-        input_variables: dict[str, str],
-        output: str,
-        intermediary_state: Optional[dict[str, str]] = None,
-    ) -> MultiOutputScores:
-        ...
-
-
 class OutputGrader(Protocol):
     def __call__(
         self,

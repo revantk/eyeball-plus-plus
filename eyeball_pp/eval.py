@@ -25,7 +25,6 @@ from .classes import (
     OutputComparator,
     OutputGrader,
     OutputScore,
-    OutputScorer,
     OutputFeedback,
     TASK_OUTPUT_KEY,
 )

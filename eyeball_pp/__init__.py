@@ -18,7 +18,7 @@ from .classes import (
     FeedbackResult,
     OutputFeedback,
     OutputComparator,
-    OutputScorer,
+    OutputGrader,
     OutputScore,
 )
 
@@ -36,8 +36,8 @@ __all__ = [
     "FeedbackResult",
     "OutputFeedback",
     "OutputComparator",
-    "OutputScorer",
     "OutputScore",
+    "OutputGrader",
     "calculate_system_health",
     "record_intermediary_state",
     "start_recording_session",
