@@ -1,4 +1,4 @@
-from enum import IntEnum
+from enum import Enum, IntEnum
 from typing import Any, Callable, Optional
 from dataclasses import dataclass
 from typing import Protocol
@@ -19,6 +19,25 @@ class FeedbackResult(IntEnum):
 
 
 TASK_OUTPUT_KEY = "task_output"
+
+
+class Criteria(str, Enum):
+    """A Criteria to evaluate."""
+
+    CONCISENESS = "conciseness"
+    RELEVANCE = "relevance"
+    CORRECTNESS = "correctness"
+    COHERENCE = "coherence"
+    HARMFULNESS = "harmfulness"
+    MALICIOUSNESS = "maliciousness"
+    HELPFULNESS = "helpfulness"
+    CONTROVERSIALITY = "controversiality"
+    MISOGYNY = "misogyny"
+    CRIMINALITY = "criminality"
+    INSENSITIVITY = "insensitivity"
+    DEPTH = "depth"
+    CREATIVITY = "creativity"
+    DETAIL = "detail"
 
 
 @dataclass
@@ -124,22 +143,13 @@ class OutputScorer(Protocol):
         ...
 
 
-@dataclass
-class GraderFeedback:
-    score: float
-    response: str
-
-    def as_dict(self):
-        return {"score": self.score, "response": self.response}
-
-    @staticmethod
-    def from_dict(data):
-        return GraderFeedback(
-            score=data["score"], response=data["response"]
-        )
-
-    def __str__(self) -> str:
-        if self.score:
-            return f"{self.score} ({self.response})"
-        else:
-            return f"{self.response}"
+class OutputGrader(Protocol):
+    def __call__(
+        self,
+        input_variables: dict[str, str],
+        output: str,
+        intermediary_state: Optional[dict[str, str]] = None,
+        criteria: Optional[list[Criteria]] = None,
+        custom_criteria: Optional[dict[str, str]] = None,
+    ) -> OutputScore:
+        ...

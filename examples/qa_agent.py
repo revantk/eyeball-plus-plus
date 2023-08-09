@@ -9,7 +9,7 @@ class QAAgent:
         else:
             return "The quick brown fox jumps over the lazy dog"
 
-    # @eyeball_pp.record_task(args_to_record=["context", "question"])
+    @eyeball_pp.record_task(args_to_record=["context", "question"])
     def ask(self, question: str) -> str:
         # You can write arbitrary code here, the only thing the eval framework
         # cares about is the input and output of this function.
@@ -18,32 +18,29 @@ class QAAgent:
         system = """
         You are trying to answer a question strictly using the information provided in the context. Reply I don't know if you don't know the answer.
         """
-        with eyeball_pp.start_recording_session(task_name="qa_agent"):
-            eyeball_pp.record_input("question", question)
-            context = self._get_context(question)
-            eyeball_pp.record_intermediary_state("context", context)
+        context = self._get_context(question)
+        eyeball_pp.record_intermediary_state("context", context)
 
-            prompt = f"""
-            Context: {context}
-            Question: {question}
-            """
+        prompt = f"""
+        Context: {context}
+        Question: {question}
+        """
 
-            # eval params can be set when you are trying to evaluate this agent
-            # with different parameters eg. different models, providers or hyperparameters like temperature
-            model = eyeball_pp.get_eval_param("model") or "gpt-3.5-turbo"
-            temperature = eyeball_pp.get_eval_param("temperature") or 0.5
+        # eval params can be set when you are trying to evaluate this agent
+        # with different parameters eg. different models, providers or hyperparameters like temperature
+        model = eyeball_pp.get_eval_param("model") or "gpt-3.5-turbo"
+        temperature = eyeball_pp.get_eval_param("temperature") or 0.5
 
-            output = openai.ChatCompletion.create(  # type: ignore
-                model=model,
-                temperature=temperature,
-                messages=[
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": prompt},
-                ],
-            )["choices"][0]["message"][
-                "content"
-            ]  # type: ignore
-            eyeball_pp.record_output(output)
+        output = openai.ChatCompletion.create(  # type: ignore
+            model=model,
+            temperature=temperature,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ],
+        )["choices"][0]["message"][
+            "content"
+        ]  # type: ignore
         return output
 
 
@@ -60,9 +57,7 @@ if __name__ == "__main__":
         question="What color is the dog?",
     )
 
-    for input_vars in eyeball_pp.rerun_recorded_examples(
-        {"temperature": 0.2}, task_name="qa_agent"
-    ):
+    for input_vars in eyeball_pp.rerun_recorded_examples({"temperature": 0.2}):
         agent.ask(input_vars["question"])
 
     # eyeball_pp.set_config(
@@ -81,7 +76,7 @@ if __name__ == "__main__":
     # for input_vars in eyeball_pp.rerun_recorded_examples({"temperature": 0.2}):
     #     agent.ask(input_vars["question"])
 
-    eyeball_pp.compare_recorded_checkpoints(
+    eyeball_pp.evaluate_system(
         task_objective="This agent tries to answer questions given a context. Verify that the agent answers the question correctly and that the answer is only based on the context.",
         intermediate_objectives={
             "context": "The context should be relevant to the question",

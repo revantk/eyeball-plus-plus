@@ -1,32 +1,20 @@
 from dataclasses import dataclass, asdict
-from enum import Enum
 import json
+from eyeball_pp.classes import Criteria
 import openai
 from typing import Optional
-from .classes import GraderFeedback
+from .classes import OutputScore
+
+
+@dataclass
+class GradingRequest:
+    criteria: dict[str, str]
+    inputs: dict[str, str]
+    output: str
 
 
 # Note: Default Criteria taken from Langchain
-class Criteria(str, Enum):
-    """A Criteria to evaluate."""
-
-    CONCISENESS = "conciseness"
-    RELEVANCE = "relevance"
-    CORRECTNESS = "correctness"
-    COHERENCE = "coherence"
-    HARMFULNESS = "harmfulness"
-    MALICIOUSNESS = "maliciousness"
-    HELPFULNESS = "helpfulness"
-    CONTROVERSIALITY = "controversiality"
-    MISOGYNY = "misogyny"
-    CRIMINALITY = "criminality"
-    INSENSITIVITY = "insensitivity"
-    DEPTH = "depth"
-    CREATIVITY = "creativity"
-    DETAIL = "detail"
-
-
-_SUPPORTED_CRITERIA = {
+_SUPPORTED_CRITERIA: dict[str, str] = {
     Criteria.CONCISENESS: "Is the response concise and to the point?",
     Criteria.RELEVANCE: "Is the response referring to a real quote from the text?",
     Criteria.CORRECTNESS: "Is the response correct, accurate, and factual?",
@@ -60,25 +48,21 @@ def _calculate_score(evals: list[dict[str, str]]) -> float:
     return num_yes / num_criteria
 
 
-def execute_grader(
+def model_based_grader(
     input_variables: dict[str, str],
     output: str,
-    criteria: list[str] = [Criteria.CORRECTNESS],
+    intermediary_state: Optional[dict[str, str]] = None,
+    criteria: Optional[list[Criteria]] = None,
     custom_criteria: Optional[dict[str, str]] = None,
-) -> GraderFeedback:
-
+) -> OutputScore:
     full_criteria = {}
+    criteria = criteria or [Criteria.CORRECTNESS]
+
     for criterion in criteria:
         if criterion not in _SUPPORTED_CRITERIA:
             raise ValueError(f"Unsupported criterion: {criterion}")
-        full_criteria[criterion] = _SUPPORTED_CRITERIA[criterion]
-    full_criteria.update(custom_criteria)
-
-    @dataclass
-    class GradingRequest:
-        criteria: dict[str, str]
-        inputs: dict[str, str]
-        output: str
+        full_criteria[str(criterion)] = _SUPPORTED_CRITERIA[criterion]
+    full_criteria.update(custom_criteria or {})
 
     system_msg = "You are an evaluator trying to grade the response of an agent based on the provided JSON data. Keeping the objective and the inputs in mind, rate the response based on the grading criteria. You always use the function provided."
     llm_request = GradingRequest(
@@ -102,24 +86,24 @@ def execute_grader(
                             "properties": {
                                 "name": {
                                     "type": "string",
-                                    "description": "The name of the grading criteria"
+                                    "description": "The name of the grading criteria",
                                 },
                                 "rating": {
                                     "type": "string",
                                     "enum": ["Yes", "No"],
-                                    "description": "Yes if the response meets the grading criteria. No if it does not."
+                                    "description": "Yes if the response meets the grading criteria. No if it does not.",
                                 },
                                 "reason": {
                                     "type": "string",
-                                    "description": "The reason for the rating."
-                                }
+                                    "description": "The reason for the rating.",
+                                },
                             },
-                            "required": ["rating", "reason"]
-                        }
+                            "required": ["rating", "reason"],
+                        },
                     }
                 },
                 "required": ["evaluations"],
-            }
+            },
         }
     ]
 
@@ -137,4 +121,4 @@ def execute_grader(
     assert response["function_call"]["name"] == "report_ratings"
     func_args = response["function_call"]["arguments"]
     evals = json.loads(func_args)["evaluations"]
-    return GraderFeedback(score=_calculate_score(evals), response=func_args)
+    return OutputScore(score=_calculate_score(evals), message=func_args)

@@ -15,7 +15,7 @@ from .classes import (
 
 def output_feedback_from_scores(
     older_scores: dict[str, OutputScore], newer_scores: dict[str, OutputScore]
-) -> dict[str, OutputFeedback]:
+) -> MultiOutputFeedback:
     feedback = {}
     for output_name, older_score in older_scores.items():
         newer_score = newer_scores.get(output_name)
@@ -37,14 +37,13 @@ def output_feedback_from_scores(
                 FeedbackResult.POSITIVE,
                 f"Score {newer_scores} is better than {older_scores}",
             )
-    return feedback
+    return MultiOutputFeedback(feedback)
 
 
 def _execute_summarizer(
     input_variables: dict[str, str],
     content: str,
 ) -> str:
-
     @dataclass
     class SummaryRequest:
         inputs: dict[str, str]
@@ -73,7 +72,6 @@ def _execute_comparator(
     older_checkpoint_response: str,
     newer_checkpoint_response: str,
 ) -> OutputFeedback:
-
     @dataclass
     class CompareRequest:
         objective: str
@@ -145,21 +143,24 @@ def _execute_comparator(
 
 
 def _execute_llm_operation(
-        objective: str,
-        input_variables: dict[str, str],
-        older_checkpoint_response: str,
-        newer_checkpoint_response: str
+    objective: str,
+    input_variables: dict[str, str],
+    older_checkpoint_response: str,
+    newer_checkpoint_response: str,
 ) -> OutputFeedback:
     token_encoding = tiktoken.get_encoding("cl100k_base")
-    token_count = len(token_encoding.encode(
-        older_checkpoint_response + newer_checkpoint_response))
-    COMPARISON_MAX_TOKEN_COUNT = int(os.environ.get('COMPARISON_MAX_TOKEN_COUNT', 6000))
+    token_count = len(
+        token_encoding.encode(older_checkpoint_response + newer_checkpoint_response)
+    )
+    COMPARISON_MAX_TOKEN_COUNT = int(os.environ.get("COMPARISON_MAX_TOKEN_COUNT", 6000))
 
     if token_count > COMPARISON_MAX_TOKEN_COUNT:
         older_checkpoint_response = _execute_summarizer(
-            input_variables, older_checkpoint_response)
+            input_variables, older_checkpoint_response
+        )
         newer_checkpoint_response = _execute_summarizer(
-            input_variables, newer_checkpoint_response)
+            input_variables, newer_checkpoint_response
+        )
 
     return _execute_comparator(
         objective=objective,

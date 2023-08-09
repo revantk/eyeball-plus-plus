@@ -5,6 +5,8 @@ import inspect
 import json
 import os
 import types
+
+from eyeball_pp.graders import model_based_grader
 from .recorders import (
     ApiClientRecorder,
     Checkpoint,
@@ -16,9 +18,12 @@ from .recorders import (
 )
 from .comparators import model_graded_comparator, output_feedback_from_scores
 from .classes import (
+    Criteria,
     FeedbackResult,
     MultiOutputFeedback,
+    MultiOutputScores,
     OutputComparator,
+    OutputGrader,
     OutputScore,
     OutputScorer,
     OutputFeedback,
@@ -499,7 +504,6 @@ class Evaluator:
 
         if input_hashes is None or len(input_hashes) == 0:
             input_hashes = self.recorder.get_input_hashes(task_name=task_name)
-            print(f"Input hashes {input_hashes}")
 
         if randomize and input_hashes:
             random.shuffle(input_hashes)
@@ -680,21 +684,25 @@ class Evaluator:
         )
         self.recorder.delete_checkpoints_for_input_hash(task_name, input_hash)
 
-    def compare_recorded_checkpoints(
+    def evaluate_system(
         self,
         task_name: Optional[str] = None,
         num_input_hashes: int = 5,
         num_checkpoints_per_input_hash: int = 3,
         task_objective: Optional[str] = None,
+        grading_criteria: Optional[list[Criteria]] = None,
         output_comparator: Optional[OutputComparator] = None,
-        output_scorer: Optional[OutputScorer] = None,
+        output_grader: Optional[OutputGrader] = None,
         intermediate_objectives: Optional[dict[str, str]] = None,
         use_cached_scores: bool = True,
         use_cached_comparisons: bool = True,
     ) -> None:
         task_name = self._get_recorded_task_name(task_name)
 
-        if output_comparator is None and output_scorer is None:
+        if output_grader is None:
+            output_grader = model_based_grader
+
+        if output_comparator is None and output_grader is None:
             output_comparator = model_graded_comparator
             assert (
                 task_objective is not None
@@ -731,7 +739,7 @@ class Evaluator:
                 if len(checkpoint_ids) == 0:
                     continue
 
-                if output_scorer is not None:
+                if output_grader is not None:
                     # TODO: change output scorer to score multiple output types
                     print(f"\nInput #{idx} - Scoring {len(checkpoint_ids)} checkpoints")
                     for checkpoint_id in checkpoint_ids:
@@ -742,11 +750,14 @@ class Evaluator:
                             )
 
                         assert checkpoint_to_score.output is not None
-                        multi_output_scores = output_scorer(
-                            task_objective or "",
-                            checkpoint_to_score.get_input_variables(),
-                            checkpoint_to_score.output,
-                            checkpoint_to_score.intermediary_state,
+                        output_score = output_grader(
+                            input_variables=checkpoint_to_score.get_input_variables(),
+                            output=checkpoint_to_score.output,
+                            intermediary_state=checkpoint_to_score.intermediary_state,
+                            criteria=grading_criteria,
+                        )
+                        multi_output_scores = MultiOutputScores(
+                            {TASK_OUTPUT_KEY: output_score}
                         )
                         self.recorder.record_output_scores(
                             task_name=task_name,
@@ -754,7 +765,7 @@ class Evaluator:
                             scores=multi_output_scores,
                         )
                         checkpoint_to_score.scores = multi_output_scores
-                        print(f"Scored {checkpoint_id}: {multi_output_scores}")
+                        print(f"Scored {checkpoint_id}: {output_score}")
 
                 if len(checkpoint_ids) < 2:
                     continue
@@ -811,7 +822,7 @@ class Evaluator:
                             older_checkpoint_intermediary_state=older_checkpoint.intermediary_state,
                             newer_checkpoint_intermediary_state=newer_checkpoint.intermediary_state,
                         )
-                    elif output_scorer is not None:
+                    elif output_grader is not None:
                         comparison_feedback = output_feedback_from_scores(
                             older_scores=older_checkpoint.scores,
                             newer_scores=newer_checkpoint.scores,
@@ -1227,7 +1238,7 @@ get_eval_param = _default_evaluator.get_eval_param
 get_eval_params = _default_evaluator.get_eval_params
 rerun_recorded_examples = _default_evaluator.rerun_recorded_examples
 rate_recorded_examples = _default_evaluator.rate_recorded_examples
-compare_recorded_checkpoints = _default_evaluator.compare_recorded_checkpoints
+evaluate_system = _default_evaluator.evaluate_system
 delete_checkpoints_for_input_vars = _default_evaluator.delete_checkpoints_for_input_vars
 calculate_system_health = _default_evaluator.calculate_system_health
 record_intermediary_state = _default_evaluator.record_intermediary_state
