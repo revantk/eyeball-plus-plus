@@ -15,6 +15,7 @@ from .eval import (
 )
 
 from .classes import (
+    Criteria,
     FeedbackResult,
     OutputFeedback,
     OutputComparator,
@@ -32,6 +33,7 @@ __all__ = [
     "rate_recorded_examples",
     "evaluate_system",
     "delete_checkpoints_for_input_vars",
+    "Criteria",
     "Evaluator",
     "FeedbackResult",
     "OutputFeedback",
