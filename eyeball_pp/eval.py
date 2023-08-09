@@ -766,6 +766,7 @@ class Evaluator:
                             input_variables=checkpoint_to_score.get_input_variables(),
                             output=checkpoint_to_score.output,
                             intermediary_state=checkpoint_to_score.intermediary_state,
+                            objective=task_objective,
                             criteria=grading_criteria,
                         )
                         multi_output_scores = MultiOutputScores(
