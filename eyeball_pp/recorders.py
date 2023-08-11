@@ -58,7 +58,7 @@ class Checkpoint:
     input_variables: dict[str, str] = dataclasses.field(default_factory=dict)
     eval_params: dict[str, Any] = dataclasses.field(default_factory=dict)
     intermediary_state: dict[str, str] = dataclasses.field(default_factory=dict)
-    output: Optional[str] = None
+    output: Optional[Any] = None
     feedback: MultiOutputFeedback = dataclasses.field(
         default_factory=MultiOutputFeedback
     )
@@ -152,7 +152,7 @@ class Checkpoint:
         if params_str:
             msg += f"({params_str})\n"
 
-        if self.output is not None:
+        if self.output is not None and isinstance(self.output, str):
             msg += self.output[:140]
         return msg
 
