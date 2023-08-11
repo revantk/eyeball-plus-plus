@@ -25,6 +25,14 @@ _SUPPORTED_CRITERIA: dict[str, str] = {
 }
 
 
+@dataclass
+class GradingRequest:
+    objective: str
+    criteria: dict[str, str]
+    inputs: dict[str, str]
+    output: str
+
+
 def _generate_grading_request(input_variables: dict[str, str],
     output: str,
     intermediary_state: Optional[dict[str, str]] = None,
@@ -32,14 +40,6 @@ def _generate_grading_request(input_variables: dict[str, str],
     criteria: Optional[list[Criteria]] = None,
     custom_criteria: Optional[dict[str, str]] = None,
 ) -> str:
-
-    @dataclass
-    class GradingRequest:
-        objective: str
-        criteria: dict[str, str]
-        inputs: dict[str, str]
-        output: str
-
     full_criteria = {}
     criteria = criteria or [Criteria.CORRECTNESS]
     for criterion in criteria:
