@@ -139,18 +139,18 @@ class Checkpoint:
             msg = f"@ {time_ago.seconds // 60} minutes ago"
         else:
             msg = f"@ {time_ago.seconds} seconds ago"
-        msg += "\n"
+        msg += "  "
 
         if output_name in self.scores:
             output_score = self.scores[output_name]
             msg += f"score: {output_score.score:.2f}"
             #            if output_score.message:
             #                msg += f" ({output_score.message})"
-            msg += "\n"
+            msg += "  "
 
         params_str = ", ".join(f"{k}={v}" for k, v in self.eval_params.items())
         if params_str:
-            msg += f"({params_str})\n"
+            msg += f"({params_str})  "
 
         if self.output is not None and isinstance(self.output, str):
             msg += self.output[:140]
