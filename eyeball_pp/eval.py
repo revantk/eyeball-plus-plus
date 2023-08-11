@@ -695,6 +695,7 @@ class Evaluator:
         num_checkpoints_per_input_hash: int = 3,
         task_objective: Optional[str] = None,
         grading_criteria: Optional[list[Criteria]] = None,
+        grading_criteria_custom: Optional[dict[str, str]] = None,
         output_comparator: Optional[OutputComparator] = None,
         output_grader: Optional[OutputGrader] = None,
         intermediate_objectives: Optional[dict[str, str]] = None,
@@ -768,6 +769,7 @@ class Evaluator:
                             intermediary_state=checkpoint_to_score.intermediary_state,
                             objective=task_objective,
                             criteria=grading_criteria,
+                            custom_criteria=grading_criteria_custom,
                         )
                         multi_output_scores = MultiOutputScores(
                             {TASK_OUTPUT_KEY: output_score}
