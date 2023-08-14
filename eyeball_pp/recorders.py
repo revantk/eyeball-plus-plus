@@ -102,7 +102,7 @@ class Checkpoint:
         if self.feedback is not None:
             checkpoint_dict["feedback"] = self.feedback
         if self.scores is not None:
-            checkpoint_dict["score"] = self.scores
+            checkpoint_dict["score"] = self.scores.as_dict()
         if self.rerun_metadata:
             checkpoint_dict["rerun_metadata"] = self.rerun_metadata
 
