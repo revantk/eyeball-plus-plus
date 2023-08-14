@@ -1258,3 +1258,5 @@ delete_checkpoints_for_input_vars = _default_evaluator.delete_checkpoints_for_in
 calculate_system_health = _default_evaluator.calculate_system_health
 record_intermediary_state = _default_evaluator.record_intermediary_state
 start_recording_session = _default_evaluator.start_recording_session
+default_evaluator = _default_evaluator
+default_recorder = _default_evaluator.recorder

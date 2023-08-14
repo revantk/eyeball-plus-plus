@@ -11,6 +11,8 @@ from .eval import (
     delete_checkpoints_for_input_vars,
     calculate_system_health,
     start_recording_session,
+    default_evaluator,
+    default_recorder,
     Evaluator,
 )
 
@@ -43,4 +45,6 @@ __all__ = [
     "calculate_system_health",
     "record_intermediary_state",
     "start_recording_session",
+    "default_evaluator",
+    "default_recorder",
 ]
