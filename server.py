@@ -124,24 +124,32 @@ def render_checkpoints(checkpoints : list[Checkpoint]) -> None:
 
 def render_system_health_by_date(
         checkpoints: list[Checkpoint],
-        num_samples: int = sys.maxsize,
-        plotting_frequency_in_days: int = 1
+        num_samples_for_rolling_average: Optional[int] = None
 ) -> list[Checkpoint]:
     """Render System Health by Date and return the list of selected checkpoints."""
     st.markdown("### System Health: By Date")
+    plot_frequencies = {
+        "Day": 1,
+        "Week": 7,
+        "Month": 30
+    }
+    breakdown = st.selectbox("Breakdown", plot_frequencies.keys(), label_visibility="collapsed")
+    frequency_in_days = plot_frequencies[breakdown]
 
     date_to_use = datetime.datetime.utcnow().date()
     system_health_by_date: list[dict[str, Any]] = []
     checkpoints_by_date: list[list[Checkpoint]] = []
     while checkpoints[-1].created_at.date() <= date_to_use:
-        if checkpoints[0].created_at.date() > date_to_use - \
-            datetime.timedelta(days=plotting_frequency_in_days):
+        next_date = date_to_use - datetime.timedelta(days=frequency_in_days)
+        checkpoints_in_range = checkpoints[0].created_at.date() > next_date
+        if num_samples_for_rolling_average or checkpoints_in_range:
             num_successes = 0.0
             num_checkpoints_used = 0
             checkpoints_selected: list[Checkpoint] = []
             input_hash_set = set()
             for checkpoint in checkpoints:
-                if num_checkpoints_used >= num_samples:
+                if num_samples_for_rolling_average and \
+                    num_checkpoints_used >= num_samples_for_rolling_average:
                     break
 
                 if checkpoint.created_at.date() <= date_to_use:
@@ -155,15 +163,17 @@ def render_system_health_by_date(
                         checkpoints_selected.append(checkpoint)
                         input_hash_set.add(checkpoint.get_input_hash())
 
-            checkpoints_by_date.append(checkpoints_selected)
+            date_str = time_to_str(date_to_use) if breakdown == "Day" else \
+                f"{time_to_str(next_date)} - {time_to_str(date_to_use)}"
             system_health_by_date.append(
                 {
-                    "Date": time_to_str(date_to_use),
+                    "Date(s)": date_str,
                     "Results": f"{float(num_successes) / float(num_checkpoints_used) * 100.0: .1f}% success ({num_successes}/{num_checkpoints_used})",
                     "Stats": f"{num_checkpoints_used} datapoints, {len(input_hash_set)} unique inputs",
                 }
             )
-        date_to_use -= datetime.timedelta(days=plotting_frequency_in_days)
+            checkpoints_by_date.append(checkpoints_selected)
+        date_to_use = next_date
 
     df = pd.DataFrame(system_health_by_date)
     df_selection = render_dataframe_with_selections(df)
