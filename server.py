@@ -249,6 +249,9 @@ def sort_checkpoints(checkpoints: list[Checkpoint]) -> list[Checkpoint]:
 
 
 def render_page() -> None:
+    if st.sidebar.button('Refresh Data'):
+        st.cache_data.clear()
+
     recorder = get_recorder()
     task_name = st.sidebar.selectbox("Task", recorder.get_task_names())
 
