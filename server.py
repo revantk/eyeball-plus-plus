@@ -1,3 +1,4 @@
+import altair as alt
 import datetime
 from eyeball_pp.classes import TASK_OUTPUT_KEY
 from eyeball_pp.eval import SUCCESS_CUTOFF
@@ -75,7 +76,9 @@ def dataframe_from_checkpoints(checkpoints: list[Checkpoint]) -> pd.DataFrame:
 
 
 def get_scored_checkpoints(
-        recorder: EvalRecorder, task_name: str, num_samples: int = sys.maxsize
+        recorder: EvalRecorder,
+        task_name: str,
+        num_samples: Optional[int] = sys.maxsize,
 ) -> list[Checkpoint]:
     """Get the latest scored checkpoints for a given task."""
     output_names_to_score: set[str] = set([TASK_OUTPUT_KEY])
@@ -108,6 +111,21 @@ def get_scored_checkpoints(
             return scored_checkpoints
 
 
+def plot_chart(
+        x_vals: list[Any], y_vals: list[Any], x_label: str, y_label: str
+) -> None:
+    """Plot a chart using the given x and y values."""
+    df_plot = pd.DataFrame({
+        x_label: x_vals,
+        y_label: y_vals
+    })
+    chart = alt.Chart(df_plot).mark_line(point=False).encode(
+        x=alt.X(x_label, axis=alt.Axis(labelAngle=-45)),
+        y=alt.Y(y_label, scale=alt.Scale(domain=[0, 100]))
+    )
+    st.altair_chart(chart, use_container_width=True)
+
+
 def render_checkpoints(checkpoints: list[Checkpoint]) -> None:
     st.markdown("### Selected Checkpoints")
     if len(checkpoints) == 0:
@@ -118,8 +136,7 @@ def render_checkpoints(checkpoints: list[Checkpoint]) -> None:
 
 
 def render_system_health_by_date(
-        checkpoints: list[Checkpoint],
-        num_samples_for_rolling_average: Optional[int] = None
+        checkpoints: list[Checkpoint]
 ) -> list[Checkpoint]:
     """Render System Health by Date and return the selected checkpoints."""
     st.markdown("### Health: By Time Period")
@@ -135,45 +152,42 @@ def render_system_health_by_date(
     date_to_use = datetime.datetime.utcnow().date()
     system_health_by_date: list[dict[str, Any]] = []
     checkpoints_by_date: list[list[Checkpoint]] = []
+    x_vals = []
+    y_vals = []
 
     while checkpoints[-1].created_at.date() <= date_to_use:
         next_date = date_to_use - datetime.timedelta(days=frequency_in_days)
-        checkpoints_in_range = checkpoints[0].created_at.date() > next_date
-        if num_samples_for_rolling_average or checkpoints_in_range:
+        if checkpoints[0].created_at.date() > next_date:
             num_successes = 0.0
-            num_checkpoints_used = 0
             checkpoints_selected: list[Checkpoint] = []
             input_hash_set = set()
             for checkpoint in checkpoints:
-                if num_samples_for_rolling_average and num_checkpoints_used \
-                        >= num_samples_for_rolling_average:
-                    break
-
-                if checkpoint.created_at.date() <= date_to_use:
-                    if (
-                        checkpoint.scores is not None
-                        and TASK_OUTPUT_KEY in checkpoint.scores
-                    ):
-                        if checkpoint.scores[TASK_OUTPUT_KEY].score \
-                                > SUCCESS_CUTOFF:
-                            num_successes += 1
-                        num_checkpoints_used += 1
-                        checkpoints_selected.append(checkpoint)
-                        input_hash_set.add(checkpoint.get_input_hash())
+                if checkpoint.created_at.date() <= date_to_use \
+                        and checkpoint.created_at.date() > next_date \
+                        and checkpoint.scores is not None \
+                        and TASK_OUTPUT_KEY in checkpoint.scores:
+                    if checkpoint.scores[TASK_OUTPUT_KEY].score \
+                            > SUCCESS_CUTOFF:
+                        num_successes += 1
+                    checkpoints_selected.append(checkpoint)
+                    input_hash_set.add(checkpoint.get_input_hash())
 
             date_str = time_to_str(date_to_use) if breakdown == "Day" else \
                 f"{time_to_str(next_date)} - {time_to_str(date_to_use)}"
-            success_rate = int(num_successes * 100 / num_checkpoints_used)
+            success_rate = int(num_successes * 100 / len(checkpoints_selected))
             system_health_by_date.append(
                 {
                     "Date(s)": date_str,
-                    "Results": f"{success_rate}% ({int(num_successes)}/{int(num_checkpoints_used)} passed)",  # noqa
-                    "Stats": f"{num_checkpoints_used} datapoints, {len(input_hash_set)} unique inputs",  # noqa
+                    "Results": f"{success_rate}% ({int(num_successes)}/{len(checkpoints_selected)} passed)",  # noqa
+                    "Stats": f"{len(checkpoints_selected)} datapoints, {len(input_hash_set)} unique inputs",  # noqa
                 }
             )
             checkpoints_by_date.append(checkpoints_selected)
+            x_vals.append(date_str)
+            y_vals.append(success_rate)
         date_to_use = next_date
 
+    plot_chart(x_vals, y_vals, "Dates", "Results (% Passed)")
     df = pd.DataFrame(system_health_by_date)
     df_selection = render_dataframe_with_selections(df)
     selected_checkpoints: list[Checkpoint] = []

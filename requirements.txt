@@ -1,3 +1,4 @@
+altair>=5.0.1,<5.1.0
 anthropic>=0.3.7,<0.4.0
 GitPython>=3.1.32,<3.2.0
 InquirerPy>=0.3.4,<0.4.0
