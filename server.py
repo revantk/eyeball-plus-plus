@@ -1,13 +1,11 @@
-from collections import defaultdict
 import datetime
-from eyeball_pp.classes import TASK_OUTPUT_KEY, FeedbackResult
+from eyeball_pp.classes import TASK_OUTPUT_KEY
 from eyeball_pp.eval import SUCCESS_CUTOFF
 from eyeball_pp.recorders import Checkpoint, EvalRecorder, FileRecorder
 from eyeball_pp.system_state import bucketize_checkpoints
 from eyeball_pp.utils import time_to_str
 import json
 import pandas as pd
-from statistics import variance
 import streamlit as st
 import sys
 from typing import Optional, Any
@@ -66,8 +64,8 @@ def dataframe_from_checkpoints(checkpoints: list[Checkpoint]) -> pd.DataFrame:
         data = json.loads(s)
         evaluation = ""
         for criteria in data['evaluations']:
-            evaluation += \
-            f"{criteria['name']}: {criteria['rating']}. {criteria['reason']}\n"
+            evaluation += (f"{criteria['name']}: {criteria['rating']}. "
+                           f"{criteria['reason']}\n")
         return evaluation
 
     df['evaluation'] = df['evaluation'].apply(extract_evaluations)
@@ -96,10 +94,6 @@ def get_scored_checkpoints(
 
     if len(all_checkpoints) > 0:
         scored_checkpoints: list[Checkpoint] = []
-        rerunid_to_checkpoint_feedback: dict[
-            str, dict[str, dict[str, Optional[FeedbackResult]]]
-        ] = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: None)))
-
         for c in all_checkpoints:
             scored_outputs = set(c.scores.keys())
             if len(scored_outputs) > 0:
@@ -109,11 +103,12 @@ def get_scored_checkpoints(
         scored_checkpoints = [c for c in all_checkpoints if len(c.scores) > 0]
 
         if len(scored_checkpoints) > 0:
-            scored_checkpoints.sort(key=lambda x: x.checkpoint_id, reverse=True)
+            scored_checkpoints.sort(
+                key=lambda x: x.checkpoint_id, reverse=True)
             return scored_checkpoints
 
 
-def render_checkpoints(checkpoints : list[Checkpoint]) -> None:
+def render_checkpoints(checkpoints: list[Checkpoint]) -> None:
     st.markdown("### Selected Checkpoints")
     if len(checkpoints) == 0:
         st.write("No checkpoints selected")
@@ -126,19 +121,21 @@ def render_system_health_by_date(
         checkpoints: list[Checkpoint],
         num_samples_for_rolling_average: Optional[int] = None
 ) -> list[Checkpoint]:
-    """Render System Health by Date and return the list of selected checkpoints."""
-    st.markdown("### System Health: By Date")
+    """Render System Health by Date and return the selected checkpoints."""
+    st.markdown("### Health: By Time Period")
     plot_frequencies = {
         "Day": 1,
         "Week": 7,
         "Month": 30
     }
-    breakdown = st.selectbox("Breakdown", plot_frequencies.keys(), label_visibility="collapsed")
+    breakdown = st.selectbox(
+        "Breakdown", plot_frequencies.keys(), label_visibility="collapsed")
     frequency_in_days = plot_frequencies[breakdown]
 
     date_to_use = datetime.datetime.utcnow().date()
     system_health_by_date: list[dict[str, Any]] = []
     checkpoints_by_date: list[list[Checkpoint]] = []
+
     while checkpoints[-1].created_at.date() <= date_to_use:
         next_date = date_to_use - datetime.timedelta(days=frequency_in_days)
         checkpoints_in_range = checkpoints[0].created_at.date() > next_date
@@ -148,8 +145,8 @@ def render_system_health_by_date(
             checkpoints_selected: list[Checkpoint] = []
             input_hash_set = set()
             for checkpoint in checkpoints:
-                if num_samples_for_rolling_average and \
-                    num_checkpoints_used >= num_samples_for_rolling_average:
+                if num_samples_for_rolling_average and num_checkpoints_used \
+                        >= num_samples_for_rolling_average:
                     break
 
                 if checkpoint.created_at.date() <= date_to_use:
@@ -157,7 +154,8 @@ def render_system_health_by_date(
                         checkpoint.scores is not None
                         and TASK_OUTPUT_KEY in checkpoint.scores
                     ):
-                        if checkpoint.scores[TASK_OUTPUT_KEY].score > SUCCESS_CUTOFF:
+                        if checkpoint.scores[TASK_OUTPUT_KEY].score \
+                                > SUCCESS_CUTOFF:
                             num_successes += 1
                         num_checkpoints_used += 1
                         checkpoints_selected.append(checkpoint)
@@ -165,11 +163,12 @@ def render_system_health_by_date(
 
             date_str = time_to_str(date_to_use) if breakdown == "Day" else \
                 f"{time_to_str(next_date)} - {time_to_str(date_to_use)}"
+            success_rate = int(num_successes * 100 / num_checkpoints_used)
             system_health_by_date.append(
                 {
                     "Date(s)": date_str,
-                    "Results": f"{float(num_successes) / float(num_checkpoints_used) * 100.0: .1f}% success ({num_successes}/{num_checkpoints_used})",
-                    "Stats": f"{num_checkpoints_used} datapoints, {len(input_hash_set)} unique inputs",
+                    "Results": f"{success_rate}% ({int(num_successes)}/{int(num_checkpoints_used)} passed)",  # noqa
+                    "Stats": f"{num_checkpoints_used} datapoints, {len(input_hash_set)} unique inputs",  # noqa
                 }
             )
             checkpoints_by_date.append(checkpoints_selected)
@@ -184,9 +183,11 @@ def render_system_health_by_date(
     return selected_checkpoints
 
 
-def render_system_health_by_run(checkpoints: list[Checkpoint]) -> list[Checkpoint]:
-    """Render System Health by Run and return the list of selected checkpoints."""
-    st.markdown("### System Health: By Run History")
+def render_system_health_by_run(
+        checkpoints: list[Checkpoint]
+) -> list[Checkpoint]:
+    """Render System Health by Run and return the selected checkpoints."""
+    st.markdown("### Health: By Run History")
 
     buckets_to_checkpoints = bucketize_checkpoints(checkpoints)
     system_health_by_run_history = []
@@ -219,7 +220,7 @@ def render_system_health_by_run(checkpoints: list[Checkpoint]) -> list[Checkpoin
                             )
                         )
             if num_checkpoints_used > 0:
-                percent = float(num_successes) / float(num_checkpoints_used) * 100.0
+                success_rate = int(num_successes * 100 / num_checkpoints_used)
                 column_name = (
                     "Results"
                     if output_name == TASK_OUTPUT_KEY
@@ -227,10 +228,10 @@ def render_system_health_by_run(checkpoints: list[Checkpoint]) -> list[Checkpoin
                 )
                 row[
                     column_name
-                ] = f"{percent: .1f}% success ({num_successes}/{num_checkpoints_used})"
+                ] = f"{success_rate}% ({num_successes}/{num_checkpoints_used} passed)"  # noqa
 
                 if output_name == TASK_OUTPUT_KEY:
-                    stats = f"{num_checkpoints_used} datapoints, {len(input_hash_to_score)} unique inputs"
+                    stats = f"{num_checkpoints_used} datapoints, {len(input_hash_to_score)} unique inputs"  # noqa
                     row["Stats"] = stats
                     if len(params_used) == 1:
                         row["Params"] = params_used.pop()
@@ -259,6 +260,7 @@ def sort_checkpoints(checkpoints: list[Checkpoint]) -> list[Checkpoint]:
 
 
 def render_page() -> None:
+    st.markdown("# Eyeball++ Evaluation")
     if st.sidebar.button('Refresh Data'):
         st.cache_data.clear()
 
