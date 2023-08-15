@@ -1,3 +1,3 @@
 | Date | Results | Stats |
 | --- | --- | --- |
-| 09 Aug  |  85.7% success (6.0/7) | 7 datapoints, 3 unique inputs |
+| 15 Aug  |  0.0% success (0.0/2) | 2 datapoints, 2 unique inputs |

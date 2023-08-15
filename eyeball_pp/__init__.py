@@ -13,6 +13,7 @@ from .eval import (
     start_recording_session,
     default_evaluator,
     default_recorder,
+    cleanup_old_checkpoints,
     Evaluator,
 )
 
@@ -47,4 +48,5 @@ __all__ = [
     "start_recording_session",
     "default_evaluator",
     "default_recorder",
+    "cleanup_old_checkpoints",
 ]

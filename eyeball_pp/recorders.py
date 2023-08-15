@@ -2,7 +2,6 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 import hashlib
 import json
-import pkg_resources
 import yaml
 import os
 import pickle
@@ -64,6 +63,7 @@ class Checkpoint:
     )
     scores: MultiOutputScores = dataclasses.field(default_factory=MultiOutputScores)
     rerun_metadata: dict[str, str] = dataclasses.field(default_factory=dict)
+    tags: list[str] = dataclasses.field(default_factory=list)
 
     def get_input_variables(self) -> dict[str, str]:
         return dict(self.input_variables)
@@ -209,6 +209,22 @@ class EvalRecorder(Protocol):
     ) -> None:
         ...
 
+    def record_comparison_result(
+        self,
+        task_name: str,
+        input_hash: str,
+        result: ComparisonResult,
+    ) -> None:
+        ...
+
+    def add_checkpoint_tag(
+        self,
+        task_name: str,
+        checkpoint_id: str,
+        tag: str,
+    ) -> None:
+        ...
+
     def get_checkpoint(
         self, task_name: str, checkpoint_id: str
     ) -> Optional[Checkpoint]:
@@ -223,14 +239,6 @@ class EvalRecorder(Protocol):
         ...
 
     def get_task_names(self) -> list[str]:
-        ...
-
-    def record_comparison_result(
-        self,
-        task_name: str,
-        input_hash: str,
-        result: ComparisonResult,
-    ) -> None:
         ...
 
     def get_comparison_result(
@@ -256,6 +264,14 @@ class EvalRecorder(Protocol):
     def edit_checkpoint(
         self, task_name: str, checkpoint_id: str, edit_dict: dict[str, Any]
     ) -> None:
+        ...
+
+    def get_checkpoints_by_tags(
+        self, task_name: str, tags: list[str]
+    ) -> list[Checkpoint]:
+        ...
+
+    def delete_checkpoint(self, task_name: str, checkpoint_id: str) -> None:
         ...
 
 
@@ -536,6 +552,9 @@ class ApiClientRecorder(EvalRecorder):
     ) -> None:
         ...
 
+    def add_checkpoint_tag(self, task_name: str, checkpoint_id: str, tag: str) -> None:
+        ...
+
 
 @dataclass
 class Task:
@@ -548,6 +567,7 @@ class Task:
     input_hash_to_comparison_results: dict[str, set[str]] = dataclasses.field(
         default_factory=dict
     )
+    tags_to_checkpoints: dict[str, set[str]] = dataclasses.field(default_factory=dict)
 
 
 class MemoryRecorder(EvalRecorder):
@@ -761,6 +781,57 @@ class MemoryRecorder(EvalRecorder):
     ) -> None:
         # TODO: implement
         return None
+
+    def add_checkpoint_tag(self, task_name: str, checkpoint_id: str, tag: str) -> None:
+        self.tasks[task_name].checkpoints[checkpoint_id].tags.append(tag)
+        if tag not in self.tasks[task_name].tags_to_checkpoints:
+            self.tasks[task_name].tags_to_checkpoints[tag] = set()
+
+        self.tasks[task_name].tags_to_checkpoints[tag].add(checkpoint_id)
+
+    def get_checkpoints_by_tags(
+        self, task_name: str, tags: list[str]
+    ) -> list[Checkpoint]:
+        if task_name not in self.tasks:
+            return []
+        task = self.tasks[task_name]
+
+        checkpoint_ids: Optional[set[str]] = None
+        for tag in tags:
+            if tag not in task.tags_to_checkpoints:
+                return []
+
+            if checkpoint_ids is None:
+                checkpoint_ids = set(task.tags_to_checkpoints[tag])
+            else:
+                checkpoint_ids = checkpoint_ids.intersection(
+                    task.tags_to_checkpoints[tag]
+                )
+
+            if len(checkpoint_ids) == 0:
+                return []
+        if checkpoint_ids is None:
+            return []
+
+        return [task.checkpoints[checkpoint_id] for checkpoint_id in checkpoint_ids]
+
+    def delete_checkpoint(self, task_name: str, checkpoint_id: str) -> None:
+        task = self.tasks[task_name]
+        if checkpoint_id not in task.checkpoints:
+            return
+        checkpoint = task.checkpoints[checkpoint_id]
+        input_hash = checkpoint.get_input_hash()
+        if input_hash in task.input_hashes:
+            task.input_hashes[input_hash].remove(checkpoint_id)
+            if len(task.input_hashes[input_hash]) == 0:
+                del task.input_hashes[input_hash]
+
+        for tag in checkpoint.tags:
+            task.tags_to_checkpoints[tag].remove(checkpoint_id)
+            if len(task.tags_to_checkpoints[tag]) == 0:
+                del task.tags_to_checkpoints[tag]
+
+        del task.checkpoints[checkpoint_id]
 
 
 class FileRecorder(EvalRecorder):
@@ -1112,6 +1183,52 @@ class FileRecorder(EvalRecorder):
     ) -> None:
         ...
 
+    def add_checkpoint_tag(self, task_name: str, checkpoint_id: str, tag: str) -> None:
+        checkpoint = self.get_checkpoint(task_name, checkpoint_id)
+        if checkpoint is None:
+            tags = [tag]
+        else:
+            tags = checkpoint.tags
+            if tag not in tags:
+                tags.append(tag)
+
+        self._record_checkpoint(
+            task_name=task_name,
+            checkpoint_id=checkpoint_id,
+            prefixes=[],
+            name="tags",
+            value=tags,
+        )
+
+    def get_checkpoints_by_tags(
+        self, task_name: str, tags: list[str]
+    ) -> list[Checkpoint]:
+        checkpoints = []
+        for file_name in os.listdir(
+            os.path.join(self.dir_path, task_name, "checkpoints")
+        ):
+            if file_name.endswith(".yaml"):
+                file_path = os.path.join(
+                    self.dir_path, task_name, "checkpoints", file_name
+                )
+                yaml_dict = yaml.load(open(file_path, "r"), Loader=yaml.FullLoader)
+                if "tags" in yaml_dict:
+                    for tag in tags:
+                        if tag not in yaml_dict["tags"]:
+                            continue
+                    yaml_dict["checkpoint_id"] = file_name[:-5]
+                    checkpoints.append(Checkpoint.from_dict(yaml_dict))
+        return checkpoints
+
+    def delete_checkpoint(self, task_name: str, checkpoint_id: str) -> None:
+        dir_name = os.path.join(self.dir_path, task_name, "checkpoints")
+        if not os.path.exists(dir_name):
+            return
+        file_name = os.path.join(dir_name, f"{checkpoint_id}.yaml")
+        if not os.path.exists(file_name):
+            return
+        os.remove(file_name)
+
 
 class DiskRecorder(EvalRecorder):
     # TODO: improve this by using rocksdb etc. vs a stupid pickle file
@@ -1264,5 +1381,22 @@ class DiskRecorder(EvalRecorder):
     ) -> None:
         self.memory_recorder.delete_checkpoints_for_input_hash(
             task_name=task_name, input_hash=input_hash
+        )
+        pickle.dump(self.memory_recorder, open(self.file_name, "wb"))
+
+    def add_checkpoint_tag(self, task_name: str, checkpoint_id: str, tag: str) -> None:
+        self.memory_recorder.add_checkpoint_tag(
+            task_name=task_name, checkpoint_id=checkpoint_id, tag=tag
+        )
+        pickle.dump(self.memory_recorder, open(self.file_name, "wb"))
+
+    def get_checkpoints_by_tags(self, task_name: str, tags: list[str]) -> list[Checkpoint]:
+        return self.memory_recorder.get_checkpoints_by_tags(
+            task_name=task_name, tags=tags
+        )
+
+    def delete_checkpoint(self, task_name: str, checkpoint_id: str) -> None:
+        self.memory_recorder.delete_checkpoint(
+            task_name=task_name, checkpoint_id=checkpoint_id
         )
         pickle.dump(self.memory_recorder, open(self.file_name, "wb"))
