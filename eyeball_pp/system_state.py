@@ -1,12 +1,12 @@
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+import subprocess
 from typing import Iterable, Optional
 
 from eyeball_pp.recorders import Checkpoint
 from eyeball_pp.utils import time_range_to_str, time_to_str
-
-# import git
+import git
 
 
 @dataclass
@@ -136,3 +136,22 @@ def get_recent_system_states(
         start_time = end_time
 
     return system_sates
+
+
+def get_system_tags() -> list[str]:
+    tags = []
+
+    # TODO: this should use the correct working directory if it's not
+    repo = git.Repo(search_parent_directories=True)
+    if repo is not None:
+        branch = repo.active_branch
+        if branch is not None:
+            tags.append(f"git_branch:{branch.name}")
+
+        result = subprocess.run(
+            ["git config user.email"], shell=True, capture_output=True, text=True
+        )
+        if result.returncode == 0:
+            tags.append(f"git_user_email:{result.stdout.strip()}")
+
+    return tags

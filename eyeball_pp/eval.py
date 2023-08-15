@@ -49,7 +49,7 @@ from dataclasses import dataclass
 import dataclasses
 import datetime
 from .utils import get_score_map, get_user_input, output_table, time_to_str
-from .system_state import bucketize_checkpoints
+from .system_state import bucketize_checkpoints, get_system_tags
 from tqdm import tqdm
 
 GREEN = "\x1b[32m"
@@ -161,14 +161,19 @@ class Evaluator:
             return
 
         self.current_recorder_state.task_name = task_name
-        if checkpoint_id is not None:
-            self.current_recorder_state.recorder_checkpoint_id = checkpoint_id
-        else:
-            self.current_recorder_state.recorder_checkpoint_id = (
-                datetime.datetime.utcnow().isoformat()
-            )
+        if checkpoint_id is None:
+            checkpoint_id = datetime.datetime.utcnow().isoformat()
+
+        self.current_recorder_state.recorder_checkpoint_id = checkpoint_id
         self.current_recorder_state.checkpoint_id_to_rerun = checkpoint_id_to_rerun
         yield None
+
+        for tag in get_system_tags():
+            self.recorder.add_checkpoint_tag(
+                task_name=task_name,
+                checkpoint_id=checkpoint_id,
+                tag=tag,
+            )
 
         del self.current_recorder_state.task_name
         del self.current_recorder_state.recorder_checkpoint_id
@@ -1241,6 +1246,58 @@ class Evaluator:
                     title=f"Intermediary state: {output_name} breakdown by input",
                 )
 
+    def cleanup_old_checkpoints(
+        self,
+        task_name: Optional[str] = None,
+        ask_before_delete: bool = True,
+        days_to_look_back: int = 4,
+    ) -> None:
+        task_name = self._get_recorded_task_name(task_name=task_name)
+
+        tags = get_system_tags()
+        if len(tags) == 0:
+            return
+
+        checkpoints = self.recorder.get_checkpoints_by_tags(task_name, tags)
+        if len(checkpoints) == 0:
+            print(f"No checkpoints found for tag combination: {tags}")
+            return
+
+        input_hash_to_checkpoints: dict[str, list[Checkpoint]] = defaultdict(list)
+        time_since = datetime.datetime.utcnow() - datetime.timedelta(
+            days=days_to_look_back
+        )
+        for checkpoint in checkpoints:
+            if checkpoint.created_at > time_since:
+                input_hash_to_checkpoints[checkpoint.get_input_hash()].append(
+                    checkpoint
+                )
+
+        for input_hash in input_hash_to_checkpoints.keys():
+            checkpoints = input_hash_to_checkpoints[input_hash]
+            checkpoints.sort(key=lambda x: x.created_at, reverse=True)
+            if len(checkpoints) == 1:
+                continue
+
+            num_deleted = 0
+            if ask_before_delete:
+                print(
+                    f"\nFound {len(checkpoints)} checkpoints for input hash: {input_hash} for tags: {tags}"
+                )
+                val = input(
+                    f"Enter 'Y' to delete {len(checkpoints) - 1} checkpoints and keep most recent checkpoint -- {checkpoints[0].checkpoint_id}\n"
+                )
+                if val != "Y":
+                    print("Skipping deletion")
+                    continue
+
+            for checkpoint in checkpoints[1:]:
+                self.recorder.delete_checkpoint(task_name, checkpoint.checkpoint_id)
+                num_deleted += 1
+            print(
+                f"Deleted {num_deleted} checkpoints for input hash: {input_hash} for tags: {tags}"
+            )
+
 
 _default_evaluator = Evaluator()
 
@@ -1260,3 +1317,4 @@ record_intermediary_state = _default_evaluator.record_intermediary_state
 start_recording_session = _default_evaluator.start_recording_session
 default_evaluator = _default_evaluator
 default_recorder = _default_evaluator.recorder
+cleanup_old_checkpoints = _default_evaluator.cleanup_old_checkpoints
