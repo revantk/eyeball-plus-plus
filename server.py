@@ -1,5 +1,5 @@
 import altair as alt
-import datetime
+from datetime import datetime, timedelta
 from eyeball_pp.classes import TASK_OUTPUT_KEY
 from eyeball_pp.eval import SUCCESS_CUTOFF
 from eyeball_pp.recorders import Checkpoint, EvalRecorder, FileRecorder
@@ -44,11 +44,19 @@ def render_dataframe_with_selections(df: pd.DataFrame) -> pd.DataFrame:
     return selected_rows.drop('Select', axis=1)
 
 
-def dataframe_from_checkpoints(checkpoints: list[Checkpoint]) -> pd.DataFrame:
+def dataframe_from_checkpoints(
+        checkpoints: list[Checkpoint], show_date: Optional[bool] = False
+) -> pd.DataFrame:
     """Convert a list of checkpoints into a dataframe."""
     df = pd.DataFrame([checkpoint.as_dict() for checkpoint in checkpoints])
 
     columns_displayed = ["input_variables", "eval_params", "output", "score"]
+
+    if show_date:
+        df.rename(columns={"checkpoint_id": "date"}, inplace=True)
+        df["date"] = df["date"].apply(
+            lambda x: time_to_str(datetime.fromisoformat(x)))
+        columns_displayed.insert(0, "date")
 
     for col in columns_displayed:
         if col not in df.columns:
@@ -64,12 +72,13 @@ def dataframe_from_checkpoints(checkpoints: list[Checkpoint]) -> pd.DataFrame:
     def extract_evaluations(s):
         data = json.loads(s)
         evaluation = ""
-        for criteria in data['evaluations']:
+        for criteria in data["evaluations"]:
             evaluation += (f"{criteria['name']}: {criteria['rating']}. "
                            f"{criteria['reason']}\n")
         return evaluation
 
-    df['evaluation'] = df['evaluation'].apply(extract_evaluations)
+    df["score"] = df["score"].apply(lambda x: "❌" if x < 1 else "✅")
+    df["evaluation"] = df["evaluation"].apply(extract_evaluations)
 
     df.fillna("", inplace=True)
     return df
@@ -126,13 +135,18 @@ def plot_chart(
     st.altair_chart(chart, use_container_width=True)
 
 
-def render_checkpoints(checkpoints: list[Checkpoint]) -> None:
-    st.markdown("### Selected Checkpoints")
+def render_checkpoints(checkpoints: list[Checkpoint]) -> list[Checkpoint]:
+    """Render the checkpoints and return the selected ones."""
+    st.markdown("### Checkpoints")
+    selected_checkpoints: list[Checkpoint] = []
     if len(checkpoints) == 0:
         st.write("No checkpoints selected")
     else:
         df = dataframe_from_checkpoints(checkpoints)
-        st.dataframe(df, hide_index=True)
+        df_selection = render_dataframe_with_selections(df)
+        for index in df_selection.index:
+            selected_checkpoints.append(checkpoints[index])
+    return selected_checkpoints
 
 
 def render_system_health_by_date(
@@ -149,14 +163,14 @@ def render_system_health_by_date(
         "Breakdown", plot_frequencies.keys(), label_visibility="collapsed")
     frequency_in_days = plot_frequencies[breakdown]
 
-    date_to_use = datetime.datetime.utcnow().date()
+    date_to_use = datetime.utcnow().date()
     system_health_by_date: list[dict[str, Any]] = []
     checkpoints_by_date: list[list[Checkpoint]] = []
     x_vals = []
     y_vals = []
 
     while checkpoints[-1].created_at.date() <= date_to_use:
-        next_date = date_to_use - datetime.timedelta(days=frequency_in_days)
+        next_date = date_to_use - timedelta(days=frequency_in_days)
         if checkpoints[0].created_at.date() > next_date:
             num_successes = 0.0
             checkpoints_selected: list[Checkpoint] = []
@@ -178,8 +192,8 @@ def render_system_health_by_date(
             system_health_by_date.append(
                 {
                     "Date(s)": date_str,
-                    "Results": f"{success_rate}% ({int(num_successes)}/{len(checkpoints_selected)} passed)",  # noqa
-                    "Stats": f"{len(checkpoints_selected)} datapoints, {len(input_hash_set)} unique inputs",  # noqa
+                    "Results": f"{success_rate}%",  # noqa
+                    "Stats": f"{int(num_successes)}/{len(checkpoints_selected)} passed, {len(input_hash_set)} unique inputs",  # noqa
                 }
             )
             checkpoints_by_date.append(checkpoints_selected)
@@ -242,10 +256,10 @@ def render_system_health_by_run(
                 )
                 row[
                     column_name
-                ] = f"{success_rate}% ({num_successes}/{num_checkpoints_used} passed)"  # noqa
+                ] = f"{success_rate}%"  # noqa
 
                 if output_name == TASK_OUTPUT_KEY:
-                    stats = f"{num_checkpoints_used} datapoints, {len(input_hash_to_score)} unique inputs"  # noqa
+                    stats = f"{num_successes}/{num_checkpoints_used} passed, {len(input_hash_to_score)} unique inputs"  # noqa
                     row["Stats"] = stats
                     if len(params_used) == 1:
                         row["Params"] = params_used.pop()
@@ -273,8 +287,25 @@ def sort_checkpoints(checkpoints: list[Checkpoint]) -> list[Checkpoint]:
     return selected_checkpoints
 
 
+def render_checkpoints_deep_dive(checkpoints: list[Checkpoint], task_name: str) -> None:
+    for checkpoint in checkpoints:
+        title = str(checkpoint.input_variables)
+        title_max_chars = 50
+        if len(title) > title_max_chars:
+            title = title[:title_max_chars] + "..."
+        st.markdown(f"##### {title}")
+
+        related_checkpoints = get_recorder().get_latest_checkpoints(
+            task_name=task_name,
+            input_hash=checkpoint.get_input_hash(), num_checkpoints=10
+        )
+
+        df = dataframe_from_checkpoints(related_checkpoints, show_date=True)
+        st.dataframe(df, hide_index=True)
+
+
 def render_page() -> None:
-    st.markdown("# Eyeball++ Evaluation")
+    st.markdown("# Eyeball++ Dashboard")
     if st.sidebar.button('Refresh Data'):
         st.cache_data.clear()
 
@@ -288,7 +319,8 @@ def render_page() -> None:
         selected_checkpoints = render_system_health_by_date(scored_checkpoints)
         selected_checkpoints += render_system_health_by_run(scored_checkpoints)
         selected_checkpoints = sort_checkpoints(selected_checkpoints)
-        render_checkpoints(selected_checkpoints)
+        deep_dive_checkpoints = render_checkpoints(selected_checkpoints)
+        render_checkpoints_deep_dive(deep_dive_checkpoints, task_name)
 
 
 if __name__ == "__main__":
