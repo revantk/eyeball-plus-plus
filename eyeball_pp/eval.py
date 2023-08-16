@@ -122,6 +122,9 @@ class Evaluator:
     def _get_config(self, **override_config_kwargs) -> EvaluatorConfig:
         return EvaluatorConfig._merge(self.config, **override_config_kwargs)
 
+    def get_recorder(self) -> EvalRecorder:
+        return self.recorder
+    
     def set_config(self, **config_kwargs) -> None:
         self.config = EvaluatorConfig._merge(self.config, **config_kwargs)
         self.data_dir = os.path.join(self.config.dir_path, "eyeball_data")
@@ -1316,5 +1319,5 @@ calculate_system_health = _default_evaluator.calculate_system_health
 record_intermediary_state = _default_evaluator.record_intermediary_state
 start_recording_session = _default_evaluator.start_recording_session
 default_evaluator = _default_evaluator
-default_recorder = _default_evaluator.recorder
+get_default_recorder = _default_evaluator.get_recorder
 cleanup_old_checkpoints = _default_evaluator.cleanup_old_checkpoints

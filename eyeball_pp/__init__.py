@@ -12,7 +12,7 @@ from .eval import (
     calculate_system_health,
     start_recording_session,
     default_evaluator,
-    default_recorder,
+    get_default_recorder,
     cleanup_old_checkpoints,
     Evaluator,
 )
@@ -47,6 +47,6 @@ __all__ = [
     "record_intermediary_state",
     "start_recording_session",
     "default_evaluator",
-    "default_recorder",
+    "get_default_recorder",
     "cleanup_old_checkpoints",
 ]

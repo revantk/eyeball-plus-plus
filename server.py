@@ -1,4 +1,5 @@
 import altair as alt
+import eyeball_pp
 from datetime import datetime, timedelta
 from eyeball_pp.classes import TASK_OUTPUT_KEY
 from eyeball_pp.eval import SUCCESS_CUTOFF
@@ -14,7 +15,8 @@ from typing import Optional, Any
 
 @st.cache_data
 def get_recorder() -> EvalRecorder:
-    return FileRecorder("examples/eyeball_data")
+    eyeball_pp.set_config(dir_path="examples")
+    return eyeball_pp.get_default_recorder()
 
 
 def flatten_dataframe_column(df: pd.DataFrame, column: str) -> str:
