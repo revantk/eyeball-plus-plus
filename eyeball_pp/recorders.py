@@ -888,13 +888,15 @@ class FileRecorder(EvalRecorder):
             os.makedirs(dir_name)
         file_name = os.path.join(dir_name, f"{checkpoint_id}.yaml")
 
-        if checkpoint_id not in self.yaml_dicts:
+        key_name = f"{task_name},{checkpoint_id}"
+
+        if key_name not in self.yaml_dicts:
             if os.path.exists(file_name):
                 yaml_dict = yaml.load(open(file_name, "r"), Loader=yaml.FullLoader)
             else:
                 yaml_dict = {}
         else:
-            yaml_dict = self.yaml_dicts[checkpoint_id]
+            yaml_dict = self.yaml_dicts[key_name]
 
         current_dict = yaml_dict
         for prefix in prefixes:
@@ -905,11 +907,11 @@ class FileRecorder(EvalRecorder):
         if flush:
             yaml.dump(yaml_dict, open(file_name, "w+"))
             try:
-                del self.yaml_dicts[checkpoint_id]
+                del self.yaml_dicts[key_name]
             except KeyError:
                 pass
         else:
-            self.yaml_dicts[checkpoint_id] = dict(yaml_dict)
+            self.yaml_dicts[key_name] = dict(yaml_dict)
         return yaml_dict
 
     def record_input_variable(
@@ -1043,6 +1045,10 @@ class FileRecorder(EvalRecorder):
     def get_checkpoint(
         self, task_name: str, checkpoint_id: str
     ) -> Optional[Checkpoint]:
+        key_name = f"{task_name},{checkpoint_id}"
+        if key_name in self.yaml_dicts:
+            return Checkpoint.from_dict(self.yaml_dicts[key_name] | {"checkpoint_id": checkpoint_id})
+        
         file_name = os.path.join(
             self.dir_path, task_name, "checkpoints", f"{checkpoint_id}.yaml"
         )
