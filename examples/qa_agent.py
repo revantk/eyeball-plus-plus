@@ -30,6 +30,7 @@ class QAAgent:
         # with different parameters eg. different models, providers or hyperparameters like temperature
         model = eyeball_pp.get_eval_param("model") or "gpt-3.5-turbo"
         temperature = eyeball_pp.get_eval_param("temperature") or 0.5
+        print(temperature)
 
         output = openai.ChatCompletion.create(  # type: ignore
             model=model,
@@ -45,7 +46,7 @@ class QAAgent:
 
 
 if __name__ == "__main__":
-    eyeball_pp.set_config(dir_path="examples", record_in_memory=True)
+    eyeball_pp.set_config(dir_path="examples")
     agent = QAAgent()
 
     agent.ask(

@@ -112,9 +112,9 @@ class Checkpoint:
     def from_dict(cls, data: dict[str, Any]) -> "Checkpoint":
         return cls(
             checkpoint_id=data["checkpoint_id"],
-            input_variables=data["input_variables"],
+            input_variables=data.get("input_variables", {}),
             eval_params=data.get("eval_params") or {},
-            output=data["output"],
+            output=data.get("output"),
             feedback=MultiOutputFeedback.from_dict(data["feedback"])
             if data.get("feedback") is not None
             else {},
