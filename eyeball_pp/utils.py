@@ -132,15 +132,15 @@ def get_score_map(
 
 def time_range_to_str(start_time: datetime, end_time: datetime) -> str:
     if start_time.date() == end_time.date():
-        return f"{start_time.strftime('%d %b %H:%M')} - {end_time.strftime('%H:%M')}"
+        return f"{start_time.strftime('%b %-d %H:%M %p')} - {end_time.strftime('%H:%M %p')}"
     else:
-        return f"{start_time.strftime('%d %b')} - {end_time.strftime('%d %b')}"
+        return f"{start_time.strftime('%b %-d')} - {end_time.strftime('%b %-d')}"
 
 
 def time_to_str(time: Union[datetime, date]) -> str:
-    hm_format = "%H:%M" if type(time) == datetime else ""
+    hm_format = ", %H:%M %p" if type(time) == datetime else ""
 
     if time.year != datetime.now().year:
-        return time.strftime(f"%d %b %Y {hm_format}")
+        return time.strftime(f"%b %-d %Y{hm_format}")
     else:
-        return time.strftime(f"%d %b {hm_format}")
+        return time.strftime(f"%b %-d{hm_format}")
