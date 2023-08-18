@@ -261,11 +261,6 @@ class EvalRecorder(Protocol):
     ) -> None:
         ...
 
-    def edit_checkpoint(
-        self, task_name: str, checkpoint_id: str, edit_dict: dict[str, Any]
-    ) -> None:
-        ...
-
     def get_checkpoints_by_tags(
         self, task_name: str, tags: list[str]
     ) -> list[Checkpoint]:
@@ -418,7 +413,7 @@ class ApiClientRecorder(EvalRecorder):
             json={
                 "task_name": task_name,
                 "checkpoint_id": checkpoint_id,
-                "scores": scores,
+                "scores": {name: score.as_dict() for name, score in scores.items()},
             },
             headers=self._get_headers(),
         )
@@ -547,14 +542,16 @@ class ApiClientRecorder(EvalRecorder):
             return []
         return response.json()["task_names"]
 
-    def edit_checkpoint(
-        self, task_name: str, checkpoint_id: str, edit_dict: dict[str, Any]
-    ) -> None:
-        ...
-
     def add_checkpoint_tag(self, task_name: str, checkpoint_id: str, tag: str) -> None:
-        ...
+        return None
 
+    def get_checkpoints_by_tags(
+        self, task_name: str, tags: list[str]
+    ) -> list[Checkpoint]:
+        return []
+
+    def delete_checkpoint(self, task_name: str, checkpoint_id: str) -> None:
+        return None
 
 @dataclass
 class Task:
@@ -776,12 +773,6 @@ class MemoryRecorder(EvalRecorder):
             del task.checkpoints[checkpoint_id]
         del task.input_hashes[input_hash]
 
-    def edit_checkpoint(
-        self, task_name: str, checkpoint_id: str, edit_dict: dict[str, Any]
-    ) -> None:
-        # TODO: implement
-        return None
-
     def add_checkpoint_tag(self, task_name: str, checkpoint_id: str, tag: str) -> None:
         self.tasks[task_name].checkpoints[checkpoint_id].tags.append(tag)
         if tag not in self.tasks[task_name].tags_to_checkpoints:
@@ -841,7 +832,7 @@ class FileRecorder(EvalRecorder):
             os.makedirs(self.dir_path)
         self.yaml_dicts: dict[str, dict[str, str]] = {}
 
-    def edit_checkpoint(
+    def _edit_checkpoint(
         self, task_name: str, checkpoint_id: str, edit_dict: dict[str, Any]
     ) -> None:
         old_checkpoint = self.get_checkpoint(task_name, checkpoint_id)
