@@ -47,7 +47,7 @@ def _generate_grading_request(input_variables: dict[str, str],
         for criterion in criteria:
             if criterion not in _SUPPORTED_CRITERIA:
                 raise ValueError(f"Unsupported criterion: {criterion}")
-            full_criteria[str(criterion)] = _SUPPORTED_CRITERIA[criterion]
+            full_criteria[criterion.value] = _SUPPORTED_CRITERIA[criterion]
     full_criteria.update(custom_criteria or {})
 
     inputs = {**input_variables, **(intermediary_state or {})}
