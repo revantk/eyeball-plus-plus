@@ -118,8 +118,8 @@ class Checkpoint:
             feedback=MultiOutputFeedback.from_dict(data["feedback"])
             if data.get("feedback") is not None
             else {},
-            scores=MultiOutputScores.from_dict(data.get("score"))
-            if data.get("score") is not None
+            scores=MultiOutputScores.from_dict(data.get("scores"))
+            if data.get("scores") is not None
             else {},
             rerun_metadata=data.get("rerun_metadata") or {},
             intermediary_state=data.get("intermediary_state") or {},
@@ -530,7 +530,7 @@ class ApiClientRecorder(EvalRecorder):
         if response.status_code != 200:
             logger.debug(f"Failed to get latest checkpoints: {response.status_code}")
             return []
-        return [Checkpoint(**data) for data in response.json()["checkpoints"]]
+        return [Checkpoint.from_dict(data) for data in response.json()["checkpoints"]]
 
     def get_task_names(self) -> list[str]:
         response = requests.get(
