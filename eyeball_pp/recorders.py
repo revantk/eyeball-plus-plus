@@ -827,11 +827,15 @@ class MemoryRecorder(EvalRecorder):
 
 class FileRecorder(EvalRecorder):
     def __init__(self, dir_path: str) -> None:
-        self.dir_path = dir_path
-        if not os.path.exists(self.dir_path):
-            os.makedirs(self.dir_path)
+        self._dir_path = dir_path
         self.yaml_dicts: dict[str, dict[str, str]] = {}
 
+    @property
+    def dir_path(self) -> str:
+        if not os.path.exists(self._dir_path):
+            os.makedirs(self._dir_path)
+        return self._dir_path
+    
     def _edit_checkpoint(
         self, task_name: str, checkpoint_id: str, edit_dict: dict[str, Any]
     ) -> None:
