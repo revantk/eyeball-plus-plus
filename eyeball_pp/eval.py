@@ -1,12 +1,15 @@
 from collections import defaultdict
 from contextlib import contextmanager
+from dataclasses import asdict
 from enum import Enum
 import inspect
 import json
 import os
 import types
 import logging
+from eyeball_pp.classes import EvaluatorConfig
 from rich import print
+import subprocess
 
 from eyeball_pp.graders import model_based_grader
 from .recorders import (
@@ -45,8 +48,6 @@ from typing import (
     runtime_checkable,
 )
 from functools import wraps
-from dataclasses import dataclass
-import dataclasses
 import datetime
 from .utils import get_score_map, get_user_input, output_table, time_to_str
 from .system_state import bucketize_checkpoints, get_system_tags
@@ -74,31 +75,6 @@ class JsonSerializable(Protocol):
 T = TypeVar("T", int, float, str, bool, bytes, dict, list, None, JsonSerializable)
 
 
-@dataclass
-class EvaluatorConfig:
-    sample_rate: float = 1.0
-    dir_path: str = "."
-    api_key: Optional[str] = None
-    api_url: Optional[str] = None
-    record_in_memory: bool = False
-
-    @staticmethod
-    def _merge(original_config: "EvaluatorConfig", **kwargs) -> "EvaluatorConfig":
-        """Kwargs should be a subset of the fields of the original config."""
-        if len(kwargs) == 0:
-            return original_config
-
-        new_config = EvaluatorConfig()
-
-        for field in dataclasses.fields(original_config):
-            if (field_val := kwargs.get(field.name)) is not None:
-                setattr(new_config, field.name, field_val)
-            else:
-                setattr(new_config, field.name, getattr(original_config, field.name))
-
-        return new_config
-
-
 class EvaluatorMode(Enum):
     RECORD = "record"
     COMPARE_CHECKPOINTS = "compare_checkpoints"
@@ -124,6 +100,9 @@ class Evaluator:
 
     def get_recorder(self) -> EvalRecorder:
         return self.recorder
+    
+    def get_config_dict(self) -> dict[str, Any]:
+        return asdict(self.config)
 
     def set_config(self, **config_kwargs) -> None:
         self.config = EvaluatorConfig._merge(self.config, **config_kwargs)
@@ -910,9 +889,20 @@ class Evaluator:
                         )
 
             self.calculate_system_health(task_name=task_name)
-
+            self.show_data_via_streamlit(task_name=task_name)
         finally:
             self.mode = EvaluatorMode.RECORD
+
+    def show_data_via_streamlit(self, task_name: str) -> None:
+        "Run streamlit server in a subprocess"
+        server_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "server.py")
+        print(server_file)
+        config_dict = json.dumps(self.get_config_dict())
+        subprocess.Popen(
+            f"python -m streamlit run {server_file} -- --task_name={task_name} --eyeball_config='{config_dict}'",
+            shell=True,
+        )
+
 
     def calculate_system_health(
         self,
@@ -1321,3 +1311,4 @@ start_recording_session = _default_evaluator.start_recording_session
 default_evaluator = _default_evaluator
 get_default_recorder = _default_evaluator.get_recorder
 cleanup_old_checkpoints = _default_evaluator.cleanup_old_checkpoints
+get_config_dict = _default_evaluator.get_config_dict

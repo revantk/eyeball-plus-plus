@@ -15,6 +15,7 @@ from .eval import (
     get_default_recorder,
     cleanup_old_checkpoints,
     Evaluator,
+    get_config_dict
 )
 
 from .classes import (
@@ -25,6 +26,7 @@ from .classes import (
     OutputGrader,
     OutputScore,
 )
+from . import server
 
 __all__ = [
     "set_config",
@@ -49,4 +51,6 @@ __all__ = [
     "default_evaluator",
     "get_default_recorder",
     "cleanup_old_checkpoints",
+    "server"
+    "get_config_dict"
 ]

@@ -1,6 +1,7 @@
 from enum import Enum, IntEnum
 from typing import Any, Callable, Optional
 from dataclasses import dataclass
+import dataclasses
 from typing import Protocol
 
 
@@ -140,3 +141,28 @@ class OutputGrader(Protocol):
         custom_criteria: Optional[dict[str, str]] = None,
     ) -> OutputScore:
         ...
+
+
+@dataclass
+class EvaluatorConfig:
+    sample_rate: float = 1.0
+    dir_path: str = "."
+    api_key: Optional[str] = None
+    api_url: Optional[str] = None
+    record_in_memory: bool = False
+
+    @staticmethod
+    def _merge(original_config: "EvaluatorConfig", **kwargs) -> "EvaluatorConfig":
+        """Kwargs should be a subset of the fields of the original config."""
+        if len(kwargs) == 0:
+            return original_config
+
+        new_config = EvaluatorConfig()
+
+        for field in dataclasses.fields(original_config):
+            if (field_val := kwargs.get(field.name)) is not None:
+                setattr(new_config, field.name, field_val)
+            else:
+                setattr(new_config, field.name, getattr(original_config, field.name))
+
+        return new_config

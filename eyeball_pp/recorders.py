@@ -280,7 +280,7 @@ class ApiClientRecorder(EvalRecorder):
         self.checkpoint_dicts: LruCache = LruCache(max_size=100)
         self.comparison_results_dict: LruCache = LruCache(max_size=100)
 
-        # self.pool = ThreadPoolExecutor(max_workers=1)
+        self.pool = ThreadPoolExecutor(max_workers=1)
 
     def _get_headers(self) -> dict[str, str]:
         return {
