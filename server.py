@@ -3,10 +3,11 @@ import eyeball_pp
 from datetime import datetime, timedelta
 from eyeball_pp.classes import TASK_OUTPUT_KEY
 from eyeball_pp.eval import SUCCESS_CUTOFF
-from eyeball_pp.recorders import Checkpoint, EvalRecorder, FileRecorder
+from eyeball_pp.recorders import Checkpoint, EvalRecorder
 from eyeball_pp.system_state import bucketize_checkpoints
 from eyeball_pp.utils import time_to_str
 import json
+import os
 import pandas as pd
 import streamlit as st
 import sys
@@ -15,7 +16,11 @@ from typing import Optional, Any
 
 @st.cache_data
 def get_recorder() -> EvalRecorder:
-    eyeball_pp.set_config(dir_path="examples")
+    EYEBALL_API_KEY = os.environ.get("EYEBALL_API_KEY", None)
+    if EYEBALL_API_KEY:
+        eyeball_pp.set_config(api_key=EYEBALL_API_KEY)
+    else:
+        eyeball_pp.set_config(dir_path="examples")
     return eyeball_pp.get_default_recorder()
 
 
