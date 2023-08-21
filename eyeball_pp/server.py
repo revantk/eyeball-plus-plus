@@ -1,21 +1,20 @@
 import altair as alt
 from datetime import datetime, timedelta
-from eyeball_pp.classes import TASK_OUTPUT_KEY, EvaluatorConfig
-from eyeball_pp.eval import SUCCESS_CUTOFF, set_config
-from eyeball_pp.eval import get_default_recorder
-from eyeball_pp.recorders import Checkpoint, EvalRecorder, FileRecorder
-from eyeball_pp.system_state import bucketize_checkpoints
-from eyeball_pp.utils import time_to_str
 import json
 import pandas as pd
 import streamlit as st
 import sys
 from typing import Optional, Any
-from fire import Fire   
+from fire import Fire
+from eyeball_pp.classes import TASK_OUTPUT_KEY
+from eyeball_pp.eval import get_default_recorder, SUCCESS_CUTOFF, set_config
+from eyeball_pp.recorders import Checkpoint, EvalRecorder
+from eyeball_pp.system_state import bucketize_checkpoints
+from eyeball_pp.utils import time_to_str
 
 
 @st.cache_data
-def get_recorder() -> EvalRecorder:    
+def get_recorder() -> EvalRecorder:
     return get_default_recorder()
 
 
@@ -47,7 +46,9 @@ def render_dataframe_with_selections(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def dataframe_from_checkpoints(
-        checkpoints: list[Checkpoint], show_date: Optional[bool] = False
+        checkpoints: list[Checkpoint],
+        show_date: Optional[bool] = False,
+        include_inputs: Optional[bool] = False,
 ) -> pd.DataFrame:
     """Convert a list of checkpoints into a dataframe."""
     df = pd.DataFrame([checkpoint.as_dict() for checkpoint in checkpoints])
@@ -66,7 +67,11 @@ def dataframe_from_checkpoints(
 
     df = df[columns_displayed]
 
-    df = flatten_dataframe_column(df, "input_variables")
+    if include_inputs:
+        df = flatten_dataframe_column(df, "input_variables")
+    else:
+        df.drop(columns=["input_variables"], inplace=True)
+
     df = flatten_dataframe_column(df, "score")
     df.rename(columns={"task_output.score": "score"}, inplace=True)
     df.rename(columns={"task_output.message": "evaluation"}, inplace=True)
@@ -143,12 +148,10 @@ def plot_chart(
 
 def render_checkpoints(checkpoints: list[Checkpoint]) -> list[Checkpoint]:
     """Render the checkpoints and return the selected ones."""
-    st.markdown("### Checkpoints")
     selected_checkpoints: list[Checkpoint] = []
-    if len(checkpoints) == 0:
-        st.write("No checkpoints selected")
-    else:
-        df = dataframe_from_checkpoints(checkpoints)
+    if len(checkpoints) > 0:
+        st.markdown("### Selected Checkpoints")
+        df = dataframe_from_checkpoints(checkpoints, include_inputs=True)
         df_selection = render_dataframe_with_selections(df)
         for index in df_selection.index:
             selected_checkpoints.append(checkpoints[index])
@@ -301,6 +304,8 @@ def sort_checkpoints(checkpoints: list[Checkpoint]) -> list[Checkpoint]:
 
 
 def render_checkpoints_deep_dive(checkpoints: list[Checkpoint], task_name: str) -> None:
+    if len(checkpoints) > 0:
+        st.markdown("### Checkpoint Details")
     for checkpoint in checkpoints:
         title = str(checkpoint.input_variables)
         title_max_chars = 50
@@ -317,7 +322,8 @@ def render_checkpoints_deep_dive(checkpoints: list[Checkpoint], task_name: str) 
         st.dataframe(df, hide_index=True)
 
 
-def render_page(task_name: Optional[str]=None, eyeball_config: Optional[dict] = None) -> None:
+def render_page(task_name: Optional[str] = None,
+                eyeball_config: Optional[dict] = None) -> None:
 
     if eyeball_config is None:
         eyeball_config = {}
