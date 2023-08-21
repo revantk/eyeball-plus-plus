@@ -114,6 +114,8 @@ class Evaluator:
             self.recorder = ApiClientRecorder(
                 api_key=self.config.api_key, api_url=self.config.api_url
             )
+        elif api_key := os.environ.get("EYEBALLPP_API_KEY"):
+            self.recorder = ApiClientRecorder(api_key=api_key, api_url=self.config.api_url)
         elif self.config.sample_rate == 0:
             self.recorder = MemoryRecorder()
         else:
