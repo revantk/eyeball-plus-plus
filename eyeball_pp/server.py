@@ -1,8 +1,8 @@
 import altair as alt
-import eyeball_pp
 from datetime import datetime, timedelta
 from eyeball_pp.classes import TASK_OUTPUT_KEY, EvaluatorConfig
-from eyeball_pp.eval import SUCCESS_CUTOFF
+from eyeball_pp.eval import SUCCESS_CUTOFF, set_config
+from eyeball_pp.eval import get_default_recorder
 from eyeball_pp.recorders import Checkpoint, EvalRecorder, FileRecorder
 from eyeball_pp.system_state import bucketize_checkpoints
 from eyeball_pp.utils import time_to_str
@@ -15,8 +15,8 @@ from fire import Fire
 
 
 @st.cache_data
-def get_recorder() -> EvalRecorder:
-    return eyeball_pp.get_default_recorder()
+def get_recorder() -> EvalRecorder:    
+    return get_default_recorder()
 
 
 def flatten_dataframe_column(df: pd.DataFrame, column: str) -> str:
@@ -322,7 +322,7 @@ def render_page(task_name: Optional[str]=None, eyeball_config: Optional[dict] = 
     if eyeball_config is None:
         eyeball_config = {}
 
-    eyeball_pp.set_config(**eyeball_config)
+    set_config(**eyeball_config)
 
     st.markdown("# Eyeball++ Dashboard")
     if st.sidebar.button('Refresh Data'):
