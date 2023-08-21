@@ -191,11 +191,14 @@ def render_system_health_by_date(
             date_str = time_to_str(date_to_use) if breakdown == "Day" else \
                 f"{time_to_str(next_date)} - {time_to_str(date_to_use)}"
             success_rate = int(num_successes * 100 / len(checkpoints_selected))
+            total_cost = sum(checkpoint.scores[TASK_OUTPUT_KEY].cost
+                             for checkpoint in checkpoints_selected)
             system_health_by_date.append(
                 {
                     "Date(s)": date_str,
                     "Results": f"{success_rate}%",  # noqa
                     "Stats": f"{int(num_successes)}/{len(checkpoints_selected)} passed, {len(input_hash_set)} unique inputs",  # noqa
+                    "Cost": f"${total_cost: .2f}"
                 }
             )
             checkpoints_by_date.append(checkpoints_selected)
@@ -227,7 +230,7 @@ def render_system_health_by_run(
         row = {"Run": bucket}
 
         for output_name in output_names_to_score:
-            num_checkpoints_used = 0
+            checkpoints_selected: list[Checkpoint] = []
             num_successes = 0
             params_used: set[str] = set()
             input_hash_to_score: dict[str, list[float]] = {}
@@ -235,7 +238,7 @@ def render_system_health_by_run(
                 if output_name in checkpoint.scores:
                     if checkpoint.scores[output_name].score > SUCCESS_CUTOFF:
                         num_successes += 1
-                    num_checkpoints_used += 1
+                    checkpoints_selected.append(checkpoint)
                     input_hash = checkpoint.get_input_hash()
                     if input_hash not in input_hash_to_score:
                         input_hash_to_score[input_hash] = []
@@ -249,6 +252,7 @@ def render_system_health_by_run(
                                 f"{k}={checkpoint.eval_params[k]}" for k in keys
                             )
                         )
+            num_checkpoints_used = len(checkpoints_selected)
             if num_checkpoints_used > 0:
                 success_rate = int(num_successes * 100 / num_checkpoints_used)
                 column_name = (
@@ -265,6 +269,9 @@ def render_system_health_by_run(
                     row["Stats"] = stats
                     if len(params_used) == 1:
                         row["Params"] = params_used.pop()
+                    total_cost = sum(checkpoint.scores[TASK_OUTPUT_KEY].cost
+                                     for checkpoint in checkpoints_selected)
+                    row["Cost"] = f"${total_cost: .2f}"
         if len(row) > 1:
             system_health_by_run_history.append(row)
 
