@@ -7,7 +7,7 @@ intermediary_state:
   context: The quick brown fox jumps over the lazy dog
 output: '"I don''t know."'
 rerun_metadata:
-  id: '2023-08-09T05:39:12.737591'
+  id: '2023-08-16T22:34:39.720247'
 score:
   task_output:
     message: "{\n  \"evaluations\": [\n    {\n      \"name\": \"correctness\",\n \
