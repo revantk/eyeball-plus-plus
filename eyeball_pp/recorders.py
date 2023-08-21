@@ -280,12 +280,27 @@ class ApiClientRecorder(EvalRecorder):
         self.checkpoint_dicts: LruCache = LruCache(max_size=100)
         self.comparison_results_dict: LruCache = LruCache(max_size=100)
 
-        self.pool = ThreadPoolExecutor(max_workers=1)
+        # self.pool = ThreadPoolExecutor(max_workers=1)
 
     def _get_headers(self) -> dict[str, str]:
         return {
             "Authorization": f"Bearer {self.api_key}",
         }
+
+    def __getstate__(self):
+        return {
+            "api_key": self.api_key,
+            "api_url": self.url,
+            "checkpoints_dict": self.checkpoint_dicts,
+            "comparison_reuslts_dict": self.comparison_results_dict
+        }
+
+    def __setstate__(self, state):
+        self.api_key = state["api_key"]
+        self.url = state["api_url"]
+        self.checkpoint_dicts = state["checkpoints_dict"]
+        self.comparison_results_dict = state["comparison_reuslts_dict"]
+
 
     def _record_checkpoint(
         self,
