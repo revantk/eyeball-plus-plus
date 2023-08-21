@@ -7,7 +7,6 @@ import json
 import os
 import types
 import logging
-from eyeball_pp.classes import EvaluatorConfig
 from rich import print
 import subprocess
 
@@ -31,6 +30,7 @@ from .classes import (
     OutputGrader,
     OutputScore,
     OutputFeedback,
+    EvaluatorConfig,
     TASK_OUTPUT_KEY,
 )
 

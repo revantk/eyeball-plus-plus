@@ -1,17 +1,21 @@
 import altair as alt
 from datetime import datetime, timedelta
+from eyeball_pp import (
+    Checkpoint,
+    bucketize_checkpoints,
+    get_default_recorder,
+    set_config, 
+    TASK_OUTPUT_KEY,
+    SUCCESS_CUTOFF,
+    time_to_str, 
+    EvalRecorder
+)
 import json
 import pandas as pd
 import streamlit as st
 import sys
 from typing import Optional, Any
 from fire import Fire
-from eyeball_pp.classes import TASK_OUTPUT_KEY
-from eyeball_pp.eval import get_default_recorder, SUCCESS_CUTOFF, set_config
-from eyeball_pp.recorders import Checkpoint, EvalRecorder
-from eyeball_pp.system_state import bucketize_checkpoints
-from eyeball_pp.utils import time_to_str
-
 
 @st.cache_data
 def get_recorder() -> EvalRecorder:
