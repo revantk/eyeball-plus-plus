@@ -124,7 +124,7 @@ class Evaluator:
 
     def get_recorder(self) -> EvalRecorder:
         return self.recorder
-    
+
     def set_config(self, **config_kwargs) -> None:
         self.config = EvaluatorConfig._merge(self.config, **config_kwargs)
         self.data_dir = os.path.join(self.config.dir_path, "eyeball_data")
@@ -135,7 +135,7 @@ class Evaluator:
             self.recorder = ApiClientRecorder(
                 api_key=self.config.api_key, api_url=self.config.api_url
             )
-        elif self.running_in_notebook or self.config.sample_rate == 0:
+        elif self.config.sample_rate == 0:
             self.recorder = MemoryRecorder()
         else:
             self.recorder = FileRecorder(self.data_dir)
