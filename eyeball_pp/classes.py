@@ -79,7 +79,7 @@ class MultiOutputFeedback(dict[str, OutputFeedback]):
 class OutputScore:
     score: float
     message: str
-    cost: float
+    cost: float = 0.0
 
     def __eq__(self, __value: object) -> bool:
         return isinstance(__value, OutputScore) and self.score == __value.score

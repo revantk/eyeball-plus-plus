@@ -119,7 +119,7 @@ class Evaluator:
         elif self.config.sample_rate == 0:
             self.recorder = MemoryRecorder()
         else:
-            self.recorder = FileRecorder(self.data_dir)
+            self.recorder = FileRecorder(self.data_dir) 
 
     @contextmanager
     def start_recording_session(
