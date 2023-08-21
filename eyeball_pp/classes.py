@@ -1,7 +1,6 @@
 from enum import Enum, IntEnum
-from typing import Any, Callable, Optional
-from dataclasses import dataclass
-import dataclasses
+from typing import Optional
+from dataclasses import dataclass, asdict, fields
 from typing import Protocol
 
 
@@ -80,6 +79,7 @@ class MultiOutputFeedback(dict[str, OutputFeedback]):
 class OutputScore:
     score: float
     message: str
+    cost: float
 
     def __eq__(self, __value: object) -> bool:
         return isinstance(__value, OutputScore) and self.score == __value.score
@@ -97,11 +97,11 @@ class OutputScore:
             return f"{self.score: .2f}"
 
     def as_dict(self):
-        return {"score": self.score, "message": self.message}
+        return asdict(self)
 
     @staticmethod
     def from_dict(data):
-        return OutputScore(score=data["score"], message=data["message"])
+        return OutputScore(**data)
 
 
 class MultiOutputScores(dict[str, OutputScore]):
@@ -159,7 +159,7 @@ class EvaluatorConfig:
 
         new_config = EvaluatorConfig()
 
-        for field in dataclasses.fields(original_config):
+        for field in fields(original_config):
             if (field_val := kwargs.get(field.name)) is not None:
                 setattr(new_config, field.name, field_val)
             else:

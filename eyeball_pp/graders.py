@@ -4,6 +4,7 @@ from eyeball_pp.classes import Criteria
 import openai
 from typing import Optional
 from .classes import OutputScore
+from .llm_utils import calculate_cost
 
 
 # Note: Default Criteria taken from Langchain
@@ -33,12 +34,13 @@ class GradingRequest:
     output: str
 
 
-def _generate_grading_request(input_variables: dict[str, str],
-    output: str,
-    intermediary_state: Optional[dict[str, str]] = None,
-    objective: Optional[str] = None,
-    criteria: Optional[list[Criteria]] = None,
-    custom_criteria: Optional[dict[str, str]] = None,
+def _generate_grading_request(
+        input_variables: dict[str, str],
+        output: str,
+        intermediary_state: Optional[dict[str, str]] = None,
+        objective: Optional[str] = None,
+        criteria: Optional[list[Criteria]] = None,
+        custom_criteria: Optional[dict[str, str]] = None,
 ) -> str:
     full_criteria = {}
     if criteria is None and custom_criteria is None:
@@ -125,8 +127,9 @@ def model_based_grader(
         }
     ]
 
+    model_name = "gpt-4"
     response = openai.ChatCompletion.create(  # type: ignore
-        model="gpt-4",
+        model=model_name,
         temperature=0.1,
         messages=[
             {"role": "system", "content": system_msg},
@@ -134,9 +137,16 @@ def model_based_grader(
         ],
         functions=functions,
         function_call={"name": "report_ratings"},
-    )["choices"][0]["message"]
-    assert response["content"] is None
-    assert response["function_call"]["name"] == "report_ratings"
-    func_args = response["function_call"]["arguments"]
+    )
+    message = response["choices"][0]["message"]
+    assert message["content"] is None
+    assert message["function_call"]["name"] == "report_ratings"
+
+    func_args = message["function_call"]["arguments"]
     evals = json.loads(func_args)["evaluations"]
-    return OutputScore(score=_calculate_score(evals), message=func_args)
+    cost = calculate_cost(model_name,
+                          response["usage"]["prompt_tokens"],
+                          response["usage"]["completion_tokens"])
+    return OutputScore(score=_calculate_score(evals),
+                       message=func_args,
+                       cost=cost)

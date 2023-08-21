@@ -850,7 +850,7 @@ class FileRecorder(EvalRecorder):
         if not os.path.exists(self._dir_path):
             os.makedirs(self._dir_path)
         return self._dir_path
-    
+
     def _edit_checkpoint(
         self, task_name: str, checkpoint_id: str, edit_dict: dict[str, Any]
     ) -> None:
@@ -1027,7 +1027,7 @@ class FileRecorder(EvalRecorder):
             task_name=task_name,
             checkpoint_id=checkpoint_id,
             prefixes=[],
-            name="score",
+            name="scores",
             value=scores.as_dict(),
             flush=True,
         )
@@ -1058,7 +1058,7 @@ class FileRecorder(EvalRecorder):
         key_name = f"{task_name},{checkpoint_id}"
         if key_name in self.yaml_dicts:
             return Checkpoint.from_dict(self.yaml_dicts[key_name] | {"checkpoint_id": checkpoint_id})
-        
+
         file_name = os.path.join(
             self.dir_path, task_name, "checkpoints", f"{checkpoint_id}.yaml"
         )
