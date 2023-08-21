@@ -101,7 +101,7 @@ class Checkpoint:
             checkpoint_dict["eval_params"] = self.eval_params
         if self.feedback is not None:
             checkpoint_dict["feedback"] = self.feedback
-        if self.scores is not None:
+        if self.scores is not None and len(self.scores) > 0:
             checkpoint_dict["score"] = self.scores.as_dict()
         if self.rerun_metadata:
             checkpoint_dict["rerun_metadata"] = self.rerun_metadata

@@ -70,8 +70,12 @@ def dataframe_from_checkpoints(
     df = flatten_dataframe_column(df, "score")
     df.rename(columns={"task_output.score": "score"}, inplace=True)
     df.rename(columns={"task_output.message": "evaluation"}, inplace=True)
+    df.rename(columns={"task_output.cost": "cost"}, inplace=True)
+    df["cost"] = df["cost"].map('${:.2f}'.format)
 
     def extract_evaluations(s):
+        if pd.isna(s):
+            return None
         data = json.loads(s)
         evaluation = ""
         for criteria in data["evaluations"]:
