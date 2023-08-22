@@ -1,3 +1,4 @@
+from fire import Fire
 from .eval import (
     rerun_recorded_examples,
     set_config,
@@ -36,6 +37,7 @@ from .recorders import (
 )
 
 from .system_state import bucketize_checkpoints
+evaluate_system_cmd = lambda : Fire(evaluate_system)
 
 __all__ = [
     "set_config",
@@ -67,4 +69,5 @@ __all__ = [
     "TASK_OUTPUT_KEY",
     "SUCCESS_CUTOFF",
     "EvalRecorder"
+    "evaluate_system_cmd"
 ]
