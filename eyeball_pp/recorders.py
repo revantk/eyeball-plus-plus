@@ -526,7 +526,7 @@ class ApiClientRecorder(EvalRecorder):
         if input_names is not None:
             params["input_names"] = input_names
 
-        response = requests.get(
+        response = requests.post(
             f"{self.url}/get_input_hashes",
             json=params,
             headers=self._get_headers(),
