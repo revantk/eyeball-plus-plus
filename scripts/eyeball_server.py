@@ -4,10 +4,10 @@ from eyeball_pp import (
     Checkpoint,
     bucketize_checkpoints,
     get_default_recorder,
-    set_config, 
+    set_config,
     TASK_OUTPUT_KEY,
     SUCCESS_CUTOFF,
-    time_to_str, 
+    time_to_str,
     EvalRecorder
 )
 import json
@@ -16,6 +16,7 @@ import streamlit as st
 import sys
 from typing import Optional, Any
 from fire import Fire
+
 
 @st.cache_data
 def get_recorder() -> EvalRecorder:
@@ -143,7 +144,7 @@ def plot_chart(
         x_label: x_vals,
         y_label: y_vals
     })
-    chart = alt.Chart(df_plot).mark_line(point=False).encode(
+    chart = alt.Chart(df_plot).mark_line(point=True).encode(
         x=alt.X(x_label, axis=alt.Axis(labelAngle=-45)),
         y=alt.Y(y_label, scale=alt.Scale(domain=[0, 100]))
     )
@@ -199,22 +200,23 @@ def render_system_health_by_date(
                     checkpoints_selected.append(checkpoint)
                     input_hash_set.add(checkpoint.get_input_hash())
 
-            date_str = time_to_str(date_to_use) if breakdown == "Day" else \
-                f"{time_to_str(next_date)} - {time_to_str(date_to_use)}"
-            success_rate = int(num_successes * 100 / len(checkpoints_selected))
-            total_cost = sum(checkpoint.scores[TASK_OUTPUT_KEY].cost
-                             for checkpoint in checkpoints_selected)
-            system_health_by_date.append(
-                {
-                    "Date(s)": date_str,
-                    "Results": f"{success_rate}%",  # noqa
-                    "Stats": f"{int(num_successes)}/{len(checkpoints_selected)} passed, {len(input_hash_set)} unique inputs",  # noqa
-                    "Cost": f"${total_cost: .2f}"
-                }
-            )
-            checkpoints_by_date.append(checkpoints_selected)
-            x_vals.append(date_str)
-            y_vals.append(success_rate)
+            if len(checkpoints_selected) > 0:
+                date_str = time_to_str(date_to_use) if breakdown == "Day" else \
+                    f"{time_to_str(next_date)} - {time_to_str(date_to_use)}"
+                success_rate = int(num_successes * 100 / len(checkpoints_selected))
+                total_cost = sum(checkpoint.scores[TASK_OUTPUT_KEY].cost
+                                 for checkpoint in checkpoints_selected)
+                system_health_by_date.append(
+                    {
+                        "Date(s)": date_str,
+                        "Results": f"{success_rate}%",  # noqa
+                        "Stats": f"{int(num_successes)}/{len(checkpoints_selected)} passed, {len(input_hash_set)} unique inputs",  # noqa
+                        "Cost": f"${total_cost: .2f}"
+                    }
+                )
+                checkpoints_by_date.append(checkpoints_selected)
+                x_vals.append(date_str)
+                y_vals.append(success_rate)
         date_to_use = next_date
 
     plot_chart(x_vals, y_vals, "Dates", "Results (% Passed)")
