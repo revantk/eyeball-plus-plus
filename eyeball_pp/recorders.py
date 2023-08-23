@@ -235,7 +235,7 @@ class EvalRecorder(Protocol):
     ) -> list[Checkpoint]:
         ...
 
-    def get_input_hashes(self, task_name: str) -> list[str]:
+    def get_input_hashes(self, task_name: str, input_names: Optional[list[str]] = None, limit: Optional[int] = None) -> list[str]:
         ...
 
     def get_task_names(self) -> list[str]:
@@ -268,7 +268,6 @@ class EvalRecorder(Protocol):
 
     def delete_checkpoint(self, task_name: str, checkpoint_id: str) -> None:
         ...
-
 
 class ApiClientRecorder(EvalRecorder):
     def __init__(self, api_key: str, api_url: Optional[str] = None) -> None:
@@ -517,12 +516,19 @@ class ApiClientRecorder(EvalRecorder):
             for data in response.json()["comparison_results"]
         ]
 
-    def get_input_hashes(self, task_name: str) -> list[str]:
+    def get_input_hashes(self, task_name: str, input_names: Optional[list[str]] = None, limit: Optional[int] = None) -> list[str]:
+        params: dict[str, Any] = {
+            "task_name": task_name,
+        }
+        if limit is not None:
+            params["limit"] = limit
+
+        if input_names is not None:
+            params["input_names"] = input_names
+
         response = requests.get(
             f"{self.url}/get_input_hashes",
-            params={
-                "task_name": task_name,
-            },
+            json=params,
             headers=self._get_headers(),
         )
         if response.status_code != 200:
@@ -573,6 +579,7 @@ class Task:
     name: str
     checkpoints: dict[str, Checkpoint] = dataclasses.field(default_factory=dict)
     input_hashes: dict[str, set[str]] = dataclasses.field(default_factory=dict)
+    input_hash_to_input_names: dict[str, set[str]] = dataclasses.field(default_factory=dict)
     comparison_results: dict[str, ComparisonResult] = dataclasses.field(
         default_factory=dict
     )
@@ -626,6 +633,7 @@ class MemoryRecorder(EvalRecorder):
         if input_hash not in task.input_hashes:
             task.input_hashes[input_hash] = set()
         task.input_hashes[input_hash].add(checkpoint_id)
+        task.input_hash_to_input_names[input_hash] = set(checkpoint.input_variables.keys())
 
     def record_input_variable(
         self,
@@ -682,11 +690,11 @@ class MemoryRecorder(EvalRecorder):
 
         return task.checkpoints[checkpoint_id]
 
-    def get_input_hashes(self, task_name: str) -> list[str]:
+    def get_input_hashes(self, task_name: str, input_names: Optional[list[str]] = None, limit: Optional[int] = None) -> list[str]:        
         task = self.tasks.get(task_name)
         if task is None:
             return []
-
+        
         hashes_to_remove = []
         for input_hash in task.input_hashes:
             if len(task.input_hashes[input_hash]) == 0:
@@ -695,7 +703,18 @@ class MemoryRecorder(EvalRecorder):
         for input_hash in hashes_to_remove:
             del task.input_hashes[input_hash]
 
-        return list(task.input_hashes.keys())
+        if input_names:
+            results = []
+            for input_hash in task.input_hashes:
+                if task.input_hash_to_input_names[input_hash].issuperset(input_names):
+                    results.append(input_hash)
+        else:
+            results = list(task.input_hashes.keys())
+
+        if limit is not None:
+            results = results[:limit]
+        return results
+    
 
     def record_eval_params(
         self,
@@ -1097,11 +1116,23 @@ class FileRecorder(EvalRecorder):
             return []
         return input_hashes_to_checkpoints[input_hash][:num_checkpoints]
 
-    def get_input_hashes(self, task_name: str) -> list[str]:
+    def get_input_hashes(self, task_name: str, input_names: Optional[list[str]] = None, limit: Optional[int] = None) -> list[str]:
         input_hashes = []
-        for file_name in os.listdir(os.path.join(self.dir_path, task_name, "inputs")):
+        input_dir_path = os.path.join(self.dir_path, task_name, "inputs")
+        for file_name in os.listdir(input_dir_path):
             if file_name.endswith(".yaml"):
-                input_hashes.append(file_name[:-5])
+                if input_names:
+                    yaml_dict = yaml.load(
+                        open(
+                            os.path.join(input_dir_path, file_name),
+                            "r",
+                        ),
+                        Loader=yaml.FullLoader,
+                    )
+                    if all([input_name in yaml_dict for input_name in input_names]):
+                        input_hashes.append(file_name[:-5])
+                else:
+                    input_hashes.append(file_name[:-5])
         return input_hashes
 
     def get_task_names(self) -> list[str]:
@@ -1327,8 +1358,8 @@ class DiskRecorder(EvalRecorder):
             task_name=task_name, input_hash=input_hash, num_checkpoints=num_checkpoints
         )
 
-    def get_input_hashes(self, task_name: str) -> list[str]:
-        return self.memory_recorder.get_input_hashes(task_name)
+    def get_input_hashes(self, task_name: str, input_names: Optional[list[str]] = None, limit: Optional[int] = None) -> list[str]:        
+        return self.memory_recorder.get_input_hashes(task_name, input_names=input_names, limit=limit)
 
     def get_task_names(self) -> list[str]:
         return self.memory_recorder.get_task_names()

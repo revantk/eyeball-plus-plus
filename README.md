@@ -25,11 +25,11 @@ eyeball_pp has 3 simple concepts -- record, evaluate and rerun.
 ## Record
 eyeball_pp  records the inputs and outputs of your task runs as you are running it and saves them as checkpoints. You can record this locally while developing or to a db from a production system. You can optionally record human feedback for the task output too.
 
-You can record your task using the `record_task` decorator. This will record every run of this function call as a `Checkpoint` for future comparison. The args_to_record specify which inputs to record and the function return value is saved as the output.
+You can record your task using the `record_task` decorator. This will record every run of this function call as a `Checkpoint` for future comparison. The input_names specify which inputs to record and the function return value is saved as the output.
 ```python
 import eyeball_pp
 
-@eyeball_pp.record_task(args_to_record=['input_a', 'input_b'])
+@eyeball_pp.record_task(input_names=['input_a', 'input_b'])
 def your_task_function(input_a, input_b):
   # Your task can run arbitrary code
   ...
@@ -85,7 +85,7 @@ You can then re-run these pre-recorded examples as you make changes. This will o
 ```python
 from eyeball_pp import rerun_recorded_examples 
 
-for input_vars in rerun_recorded_examples():
+for input_vars in rerun_recorded_examples(input_names=['input_a', 'input_b']):
   your_task_function(input_vars['input_a'], input_vars['input_b'])
 ```
 
@@ -93,11 +93,11 @@ You can also re-run the examples with a set of parameters you want to evaluate (
 ```python
 from eyeball_pp import get_eval_param, rerun_recorded_examples 
 
-for vars in rerun_recorded_examples({'model': 'gpt-4', 'temperature': 0.7}, {'model': 'mpt-30b-chat'}):
+for vars in rerun_recorded_examples(input_names=['input_a', 'input_b'], eval_params_list=[{'model': 'gpt-4', 'temperature': 0.7}, {'model': 'mpt-30b-chat'}]):
   your_task_function(vars['input_a'], vars['input_b'])
 
 # You can access these eval params from anywhere in your code
-@eyeball_pp.record_task(args_to_record=['input_a', 'input_b'])
+@eyeball_pp.record_task(input_names=['input_a', 'input_b'])
 def your_task_function(input_a, input_b):
   ...
   model = get_eval_param('model') or 'gpt-3.5-turbo'

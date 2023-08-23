@@ -324,7 +324,7 @@ class Evaluator:
 
     def record_task(
         self,
-        args_to_record: list[str],
+        input_names: list[str],
         task_name: Optional[str] = None,
         checkpoint_id_arg_name: Optional[str] = None,
         eval_params: Optional[dict[str, Any]] = None,
@@ -395,7 +395,7 @@ class Evaluator:
                     )
 
                 for arg_name, arg_val in zip(fn_arg_names, args):
-                    if arg_name in args_to_record:
+                    if arg_name in input_names:
                         self.record_input(
                             task_name=local_task_name,
                             checkpoint_id=recorder_checkpoint_id,
@@ -404,7 +404,7 @@ class Evaluator:
                         )
 
                 for kwarg_name, kwarg_val in kwargs.items():
-                    if kwarg_name in args_to_record:
+                    if kwarg_name in input_names:
                         self.record_input(
                             task_name=local_task_name,
                             checkpoint_id=recorder_checkpoint_id,
@@ -478,7 +478,8 @@ class Evaluator:
 
     def rerun_recorded_examples(
         self,
-        *eval_params_list: dict[str, Any],
+        input_names: list[str],
+        eval_params_list: Optional[list[dict[str, Any]]] = None,
         task_name: Optional[str] = None,
         input_hashes: Optional[list[str]] = None,
         limit: Optional[int] = None,
@@ -496,7 +497,7 @@ class Evaluator:
                 )
 
         if input_hashes is None or len(input_hashes) == 0:
-            input_hashes = self.recorder.get_input_hashes(task_name=task_name)
+            input_hashes = self.recorder.get_input_hashes(task_name=task_name, input_names=input_names, limit=limit)
 
         if randomize and input_hashes:
             random.shuffle(input_hashes)
@@ -504,6 +505,8 @@ class Evaluator:
         if limit is not None:
             input_hashes = input_hashes[:limit]
 
+        eval_params_list = eval_params_list or []
+        
         try:
             self.mode = EvaluatorMode.RERUN_EXAMPLES
             rerun_metadata = {
