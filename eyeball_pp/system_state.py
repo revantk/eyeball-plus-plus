@@ -6,7 +6,6 @@ from typing import Iterable, Optional
 
 from eyeball_pp.recorders import Checkpoint
 from eyeball_pp.utils import time_range_to_str, time_to_str
-import git
 
 
 @dataclass
@@ -138,20 +137,30 @@ def get_recent_system_states(
     return system_sates
 
 
+_SYSTEM_TAGS: Optional[list[str]] = None
+
 def get_system_tags() -> list[str]:
+    global _SYSTEM_TAGS
+    if _SYSTEM_TAGS is not None:
+        return _SYSTEM_TAGS
+    
     tags = []
+    result = subprocess.run(
+        ["""echo "$(git branch --show-current),$(git config user.email)" """],
+        shell=True,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        stripped_result = result.stdout.strip()
+        if stripped_result:
+            split_result = stripped_result.split(",")
+            if len(split_result) == 2:
+                branch, user_email = split_result
+                if branch:
+                    tags.append(f"git_branch:{split_result[0]}")
+                if user_email:
+                    tags.append(f"git_user_email:{split_result[1]}")
 
-    # TODO: this should use the correct working directory if it's not
-    repo = git.Repo(search_parent_directories=True)
-    if repo is not None:
-        branch = repo.active_branch
-        if branch is not None:
-            tags.append(f"git_branch:{branch.name}")
-
-        result = subprocess.run(
-            ["git config user.email"], shell=True, capture_output=True, text=True
-        )
-        if result.returncode == 0:
-            tags.append(f"git_user_email:{result.stdout.strip()}")
-
+    _SYSTEM_TAGS = tags
     return tags
