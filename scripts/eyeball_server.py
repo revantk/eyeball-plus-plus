@@ -36,18 +36,18 @@ def render_dataframe_with_selections(df: pd.DataFrame) -> pd.DataFrame:
     """Render the dataframe with the selection checkboxes and
     returned the selected items as a dataframe"""
     df_with_selections = df.copy()
-    df_with_selections.insert(0, "Select", False)
+    df_with_selections.insert(0, "🔍", False)
 
     edited_df = st.data_editor(
         df_with_selections,
         hide_index=True,
-        column_config={"Select":
+        column_config={"🔍":
                        st.column_config.CheckboxColumn(required=True)},
         disabled=df.columns,
     )
 
-    selected_rows = edited_df[edited_df.Select]
-    return selected_rows.drop('Select', axis=1)
+    selected_rows = edited_df[edited_df["🔍"]]
+    return selected_rows.drop("🔍", axis=1)
 
 
 def dataframe_from_checkpoints(
