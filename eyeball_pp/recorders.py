@@ -818,7 +818,7 @@ class MemoryRecorder(EvalRecorder):
         self, task_name: str, tags: list[str]
     ) -> list[Checkpoint]:
         if task_name not in self.tasks:
-            return []
+            return [ ]
         task = self.tasks[task_name]
 
         checkpoint_ids: Optional[set[str]] = None
