@@ -179,9 +179,19 @@ Human Feedback:
 
 
 def optimize_policy(
-    grading_criteria: dict[str, str], checkpoints: list[Checkpoint]
+    grading_criteria: list[Criteria],
+    custom_criteria: dict[str, str],
+    checkpoints: list[Checkpoint],
 ) -> Optional[dict[str, str]]:
     """Output a new policy that is optimized based on the output feedback"""
+
+    criteria = dict(custom_criteria) if custom_criteria else {}
+    criteria.update(
+        {
+            criterion.value: _SUPPORTED_CRITERIA[criterion]
+            for criterion in grading_criteria
+        }
+    )
 
     disagreements: list[str] = []
     for checkpoint in checkpoints:
@@ -215,7 +225,7 @@ def optimize_policy(
         messages=[
             {
                 "role": "system",
-                "content": f"You are an evaluator trying to optimize the grading criteria to better match the human feedback. The current grading criteria are: {grading_criteria}",
+                "content": f"You are an evaluator trying to optimize the grading criteria to better match the human feedback. The current grading criteria are: {criteria}",
             },
             {
                 "role": "user",
@@ -224,3 +234,4 @@ def optimize_policy(
         ],
     )
     print(response["choices"][0]["message"]["content"])
+    return None

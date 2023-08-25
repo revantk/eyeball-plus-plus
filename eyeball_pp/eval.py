@@ -11,7 +11,7 @@ from rich import print
 import subprocess
 from eyeball_pp.classes import SUCCESS_CUTOFF
 
-from eyeball_pp.graders import model_based_grader
+from eyeball_pp.graders import model_based_grader, optimize_policy
 from .recorders import (
     ApiClientRecorder,
     Checkpoint,
@@ -1312,6 +1312,30 @@ class Evaluator:
                 f"Deleted {num_deleted} checkpoints for input hash: {input_hash} for tags: {tags}"
             )
 
+    def optimize_policy_based_on_feedback(
+        self,
+        grading_criteria: list[Criteria],
+        custom_criteria: dict[str, str],
+        task_name: Optional[str] = None,
+    ) -> None:
+        task_name = self._get_recorded_task_name(task_name=task_name)
+        if task_name is None:
+            raise ValueError("Must provide a task_name")
+
+        input_hashes = self.recorder.get_input_hashes(task_name, limit=50)
+        all_checkpoints = []
+        for input_hash in input_hashes:
+            checkpoints = self.recorder.get_latest_checkpoints(
+                task_name=task_name, input_hash=input_hash, num_checkpoints=10
+            )
+            all_checkpoints.extend(checkpoints)
+
+        optimize_policy(
+            grading_criteria=grading_criteria,
+            custom_criteria=custom_criteria,
+            checkpoints=all_checkpoints,
+        )
+
 
 _default_evaluator = Evaluator()
 
@@ -1333,3 +1357,4 @@ default_evaluator = _default_evaluator
 get_default_recorder = _default_evaluator.get_recorder
 cleanup_old_checkpoints = _default_evaluator.cleanup_old_checkpoints
 get_config_dict = _default_evaluator.get_config_dict
+optimize_policy_based_on_feedback = _default_evaluator.optimize_policy_based_on_feedback

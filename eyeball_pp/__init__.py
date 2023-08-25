@@ -20,6 +20,7 @@ from .eval import (
     get_config_dict,
     time_to_str,
     TASK_OUTPUT_KEY,
+    optimize_policy_based_on_feedback,
 )
 
 from .classes import (
@@ -85,4 +86,5 @@ __all__ = [
     "EvalRecorder",
     "evaluate_system_cmd",
     "rate_recorded_examples_cmd",
+    "optimize_policy_based_on_feedback",
 ]
