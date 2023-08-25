@@ -1,3 +1,4 @@
+from typing import Optional
 from fire import Fire
 from .eval import (
     rerun_recorded_examples,
@@ -35,6 +36,21 @@ from .recorders import Checkpoint, EvalRecorder
 
 from .system_state import bucketize_checkpoints
 
+
+def rate_recorded_examples_cmd():
+    def _wrapper(
+        dir_path: Optional[str] = None,
+        api_key: Optional[str] = None,
+        api_url: Optional[str] = None,
+        task_name: Optional[str] = None,
+    ):
+        set_config(api_key=api_key, api_url=api_url, dir_path=dir_path)
+        print(get_default_recorder().get_task_names())
+        rate_recorded_examples(task_name=task_name)
+
+    Fire(_wrapper)
+
+
 evaluate_system_cmd = lambda: Fire(evaluate_system)
 
 __all__ = [
@@ -66,5 +82,7 @@ __all__ = [
     "time_to_str",
     "TASK_OUTPUT_KEY",
     "SUCCESS_CUTOFF",
-    "EvalRecorder" "evaluate_system_cmd",
+    "EvalRecorder",
+    "evaluate_system_cmd",
+    "rate_recorded_examples_cmd",
 ]

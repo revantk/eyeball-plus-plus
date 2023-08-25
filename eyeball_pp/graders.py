@@ -160,12 +160,21 @@ def _capture_disagreement(
     feedback = checkpoint.feedback[TASK_OUTPUT_KEY]
     model_score = checkpoint.scores[TASK_OUTPUT_KEY]
     return f"""
-Input Variables: {checkpoint.input_variables}
-Output: {checkpoint.output}
+<Start Disagreement>
+Input Variables:
+{checkpoint.input_variables}
+
+Intermediary State:
+{checkpoint.intermediary_state}
+
+Output:
+{checkpoint.output}
+
 Model Grading:
 {model_score.message}
 Human Feedback:
 {str(feedback)}
+<End Disagreement>
 """
 
 
@@ -197,7 +206,7 @@ def optimize_policy(
     if len(disagreements) == 0:
         return None
 
-    disagreements_str = "\n\n".join(disagreements)
+    disagreements_str = "\n\n".join(disagreements[:3])
     print(disagreements_str)
 
     response = openai.ChatCompletion.create(
