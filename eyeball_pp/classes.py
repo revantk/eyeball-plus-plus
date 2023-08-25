@@ -166,3 +166,6 @@ class EvaluatorConfig:
                 setattr(new_config, field.name, getattr(original_config, field.name))
 
         return new_config
+
+
+SUCCESS_CUTOFF = 0.5

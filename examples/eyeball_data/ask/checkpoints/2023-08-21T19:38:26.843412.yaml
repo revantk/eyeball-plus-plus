@@ -1,5 +1,9 @@
 eval_params:
   temperature: 0.2
+feedback:
+  task_output:
+    message: ''
+    result: POSITIVE
 input_hash: 21cabd66aaed06837247fb1682a288e79354311e19a59e0144f92853f7d9f4fd
 input_variables:
   question: '"What color is the bat ?"'

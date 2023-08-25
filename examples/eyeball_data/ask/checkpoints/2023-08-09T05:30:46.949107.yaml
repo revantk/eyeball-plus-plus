@@ -4,10 +4,14 @@ input_variables:
 intermediary_state:
   context: The quick brown fox jumps over the lazy dog
 output: '"I don''t know."'
-score:
+scores:
   task_output:
     message: "{\n  \"evaluations\": [\n    {\n      \"name\": \"Criteria.CORRECTNESS\"\
       ,\n      \"rating\": \"Yes\",\n      \"reason\": \"The response is correct as\
       \ the agent admitted to not knowing the color of the fox, which is a factual\
       \ statement.\"\n    }\n  ]\n}"
     score: 1.0
+feedback:
+  task_output:
+    result: "NEGATIVE"
+    message: "The context clearly states that the fox is brown."

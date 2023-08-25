@@ -3,9 +3,10 @@ import json
 from eyeball_pp.classes import Criteria
 import openai
 from typing import Optional
-from .classes import OutputScore
-from .llm_utils import calculate_cost
 
+from eyeball_pp.recorders import Checkpoint
+from .classes import FeedbackResult, OutputScore, TASK_OUTPUT_KEY, SUCCESS_CUTOFF
+from .llm_utils import calculate_cost
 
 # Note: Default Criteria taken from Langchain
 _SUPPORTED_CRITERIA: dict[str, str] = {
@@ -35,12 +36,12 @@ class GradingRequest:
 
 
 def _generate_grading_request(
-        input_variables: dict[str, str],
-        output: str,
-        intermediary_state: Optional[dict[str, str]] = None,
-        objective: Optional[str] = None,
-        criteria: Optional[list[Criteria]] = None,
-        custom_criteria: Optional[dict[str, str]] = None,
+    input_variables: dict[str, str],
+    output: str,
+    intermediary_state: Optional[dict[str, str]] = None,
+    objective: Optional[str] = None,
+    criteria: Optional[list[Criteria]] = None,
+    custom_criteria: Optional[dict[str, str]] = None,
 ) -> str:
     full_criteria = {}
     if criteria is None and custom_criteria is None:
@@ -54,7 +55,8 @@ def _generate_grading_request(
 
     inputs = {**input_variables, **(intermediary_state or {})}
     llm_request = GradingRequest(
-        criteria=full_criteria, inputs=inputs, output=output, objective=objective)
+        criteria=full_criteria, inputs=inputs, output=output, objective=objective
+    )
     return json.dumps(asdict(llm_request))
 
 
@@ -75,7 +77,6 @@ def model_based_grader(
     criteria: Optional[list[Criteria]] = None,
     custom_criteria: Optional[dict[str, str]] = None,
 ) -> OutputScore:
-
     system_msg = "You are an evaluator trying to grade the response of an agent based on the provided JSON data. Keeping the objective and the inputs in mind, rate the response based on the grading criteria. You always use the function provided."
 
     objective = objective or "This agent responds to inputs."
@@ -144,9 +145,73 @@ def model_based_grader(
 
     func_args = message["function_call"]["arguments"]
     evals = json.loads(func_args)["evaluations"]
-    cost = calculate_cost(model_name,
-                          response["usage"]["prompt_tokens"],
-                          response["usage"]["completion_tokens"])
-    return OutputScore(score=_calculate_score(evals),
-                       message=func_args,
-                       cost=cost)
+    cost = calculate_cost(
+        model_name,
+        response["usage"]["prompt_tokens"],
+        response["usage"]["completion_tokens"],
+    )
+    return OutputScore(score=_calculate_score(evals), message=func_args, cost=cost)
+
+
+def _capture_disagreement(
+    checkpoint: Checkpoint,
+) -> str:
+    """Capture the disagreement between the feedback and the model output"""
+    feedback = checkpoint.feedback[TASK_OUTPUT_KEY]
+    model_score = checkpoint.scores[TASK_OUTPUT_KEY]
+    return f"""
+Input Variables: {checkpoint.input_variables}
+Output: {checkpoint.output}
+Model Grading:
+{model_score.message}
+Human Feedback:
+{str(feedback)}
+"""
+
+
+def optimize_policy(
+    grading_criteria: dict[str, str], checkpoints: list[Checkpoint]
+) -> Optional[dict[str, str]]:
+    """Output a new policy that is optimized based on the output feedback"""
+
+    disagreements: list[str] = []
+    for checkpoint in checkpoints:
+        if (
+            checkpoint.scores is None
+            or TASK_OUTPUT_KEY not in checkpoint.scores
+            or checkpoint.feedback is None
+            or TASK_OUTPUT_KEY not in checkpoint.feedback
+        ):
+            continue
+
+        feedback = checkpoint.feedback[TASK_OUTPUT_KEY]
+        model_score = checkpoint.scores[TASK_OUTPUT_KEY]
+
+        if model_score.score > SUCCESS_CUTOFF:
+            if feedback.result != FeedbackResult.POSITIVE:
+                disagreements.append(_capture_disagreement(checkpoint))
+        else:
+            if feedback.result != FeedbackResult.NEGATIVE:
+                disagreements.append(_capture_disagreement(checkpoint))
+
+    if len(disagreements) == 0:
+        return None
+
+    disagreements_str = "\n\n".join(disagreements)
+    print(disagreements_str)
+
+    response = openai.ChatCompletion.create(
+        model="gpt-4",
+        temperature=0.1,
+        messages=[
+            {
+                "role": "system",
+                "content": f"You are an evaluator trying to optimize the grading criteria to better match the human feedback. The current grading criteria are: {grading_criteria}",
+            },
+            {
+                "role": "user",
+                "content": f"""Given the following disagreements, what is the best policy to optimize the grading criteria?\n\n{disagreements_str}""",
+            },
+        ],
+    )
+    print(response["choices"][0]["message"]["content"])

@@ -9,6 +9,7 @@ import types
 import logging
 from rich import print
 import subprocess
+from eyeball_pp.classes import SUCCESS_CUTOFF
 
 from eyeball_pp.graders import model_based_grader
 from .recorders import (
@@ -60,7 +61,6 @@ BOLD = "\x1b[1m"
 UNDERLINE = "\x1b[4m"
 ITALIC = "\x1b[3m"
 HEADING_BG = "\x1b[103m"
-SUCCESS_CUTOFF = 0.5
 END_CLR = "\x1b[0m"
 
 logger = logging.getLogger(__name__)
@@ -100,7 +100,7 @@ class Evaluator:
 
     def get_recorder(self) -> EvalRecorder:
         return self.recorder
-    
+
     def get_config_dict(self) -> dict[str, Any]:
         return asdict(self.config)
 
@@ -115,11 +115,13 @@ class Evaluator:
                 api_key=self.config.api_key, api_url=self.config.api_url
             )
         elif api_key := os.environ.get("EYEBALLPP_API_KEY"):
-            self.recorder = ApiClientRecorder(api_key=api_key, api_url=self.config.api_url)
+            self.recorder = ApiClientRecorder(
+                api_key=api_key, api_url=self.config.api_url
+            )
         elif self.config.sample_rate == 0:
             self.recorder = MemoryRecorder()
         else:
-            self.recorder = FileRecorder(self.data_dir) 
+            self.recorder = FileRecorder(self.data_dir)
 
     @contextmanager
     def start_recording_session(
@@ -446,6 +448,7 @@ class Evaluator:
         task_name: Optional[str] = None,
         checkpoint_id: Optional[str] = None,
         print_inputs: bool = False,
+        intermediary_state: Optional[dict[str, str]] = None,
     ) -> Optional[OutputFeedback]:
         task_name, checkpoint_id = self._get_recorder_state(task_name, checkpoint_id)
         checkpoint = self.recorder.get_checkpoint(
@@ -457,9 +460,18 @@ class Evaluator:
         if print_inputs:
             print(checkpoint.get_input_var_str())
 
+        user_prompt = f"What do you think of the result?\n{output}\n"
+        if intermediary_state:
+            intermediary_state_str = "\n\n".join(
+                f"{k}:\n{v}" for k, v in intermediary_state.items()
+            )
+            user_prompt = (
+                f"Intermediary state:\n{intermediary_state_str}\n\n" + user_prompt
+            )
+
         feedback_result = FeedbackResult[
             get_user_input(
-                f"What do you think of the result?\n{output}\n",
+                user_prompt,
                 choices=[f.name for f in FeedbackResult],
             )
         ]
@@ -497,7 +509,9 @@ class Evaluator:
                 )
 
         if input_hashes is None or len(input_hashes) == 0:
-            input_hashes = self.recorder.get_input_hashes(task_name=task_name, input_names=input_names, limit=limit)
+            input_hashes = self.recorder.get_input_hashes(
+                task_name=task_name, input_names=input_names, limit=limit
+            )
 
         if randomize and input_hashes:
             random.shuffle(input_hashes)
@@ -506,7 +520,7 @@ class Evaluator:
             input_hashes = input_hashes[:limit]
 
         eval_params_list = eval_params_list or []
-        
+
         try:
             self.mode = EvaluatorMode.RERUN_EXAMPLES
             rerun_metadata = {
@@ -620,6 +634,7 @@ class Evaluator:
                                 checkpoint.output or "",
                                 task_name=task_name,
                                 checkpoint_id=checkpoint.checkpoint_id,
+                                intermediary_state=checkpoint.intermediary_state,
                             )
                             if output_feedback is not None:
                                 already_seen_outputs_to_feedback[
@@ -900,14 +915,15 @@ class Evaluator:
 
     def show_data_via_streamlit(self, task_name: str) -> None:
         "Run streamlit server in a subprocess"
-        server_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "server.py")
+        server_file = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "server.py"
+        )
         print(server_file)
         config_dict = json.dumps(self.get_config_dict())
         subprocess.Popen(
             f"python -m streamlit run {server_file} -- --task_name={task_name} --eyeball_config='{config_dict}'",
             shell=True,
         )
-
 
     def calculate_system_health(
         self,

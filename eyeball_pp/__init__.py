@@ -17,12 +17,12 @@ from .eval import (
     cleanup_old_checkpoints,
     Evaluator,
     get_config_dict,
-    time_to_str, 
+    time_to_str,
     TASK_OUTPUT_KEY,
-    SUCCESS_CUTOFF
 )
 
 from .classes import (
+    SUCCESS_CUTOFF,
     Criteria,
     FeedbackResult,
     OutputFeedback,
@@ -31,13 +31,11 @@ from .classes import (
     OutputScore,
 )
 
-from .recorders import (
-    Checkpoint, 
-    EvalRecorder
-)
+from .recorders import Checkpoint, EvalRecorder
 
 from .system_state import bucketize_checkpoints
-evaluate_system_cmd = lambda : Fire(evaluate_system)
+
+evaluate_system_cmd = lambda: Fire(evaluate_system)
 
 __all__ = [
     "set_config",
@@ -68,6 +66,5 @@ __all__ = [
     "time_to_str",
     "TASK_OUTPUT_KEY",
     "SUCCESS_CUTOFF",
-    "EvalRecorder"
-    "evaluate_system_cmd"
+    "EvalRecorder" "evaluate_system_cmd",
 ]
