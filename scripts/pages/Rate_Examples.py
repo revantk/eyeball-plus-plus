@@ -15,6 +15,13 @@ from typing import Optional, Any
 from fire import Fire
 
 
+FEEDBACK_MAP = {
+    "👍": FeedbackResult.POSITIVE,
+    "😐": FeedbackResult.NEUTRAL,
+    "👎": FeedbackResult.NEGATIVE,
+}
+
+
 @st.cache_data
 def get_recorder() -> EvalRecorder:
     return get_default_recorder()
@@ -36,14 +43,26 @@ def scroll_to_top():
         """, unsafe_allow_html=True)
 
 
-def next_item() -> None:
+def submit_feedback(
+        task_name: str, checkpoint: Checkpoint, rating: str, feedback: str
+) -> None:
     st.session_state.index += 1
     scroll_to_top()
+    output_feedback = MultiOutputFeedback({
+        TASK_OUTPUT_KEY: OutputFeedback(
+            result=FEEDBACK_MAP[rating],
+            message=feedback)
+    })
+    get_recorder().record_output_feedback(
+        task_name=task_name,
+        checkpoint_id=checkpoint.checkpoint_id,
+        feedback=output_feedback,
+    )
 
 
 def render_feedback_form(
-        checkpoint: Checkpoint, num_checkpoints: int
-) -> Optional[OutputFeedback]:
+        task_name: str, checkpoint: Checkpoint, num_checkpoints: int
+) -> None:
     with st.form(key="rating_form"):
         checkpoint_time = datetime.fromisoformat(checkpoint.checkpoint_id)
         st.markdown(f"### Example {st.session_state.index + 1} of {num_checkpoints} ({time_to_str(checkpoint_time)})")  # noqa
@@ -56,25 +75,15 @@ def render_feedback_form(
         render_variable("output", checkpoint.output)
         render_divider()
 
-        feedback_map = {
-            "👍": FeedbackResult.POSITIVE,
-            "😐": FeedbackResult.NEUTRAL,
-            "👎": FeedbackResult.NEGATIVE,
-        }
         rating = st.radio(
-            "**Rating**", feedback_map.keys(), horizontal=True,
+            "**Rating**", FEEDBACK_MAP.keys(), horizontal=True,
             key=f"rating-{checkpoint.checkpoint_id}")
         feedback = st.text_input(
-            "**Feedback**",key=f"feedback-{checkpoint.checkpoint_id}")
-        submit_button = st.form_submit_button(
-            "Submit", on_click=next_item)
-
-    if submit_button:
-        return MultiOutputFeedback({
-            TASK_OUTPUT_KEY: OutputFeedback(
-                result=feedback_map[rating],
-                message=feedback)
-        })
+            "**Feedback**", key=f"feedback-{checkpoint.checkpoint_id}")
+        st.form_submit_button(
+            "Submit",
+            on_click=submit_feedback,
+            args=(task_name, checkpoint, rating, feedback))
 
 
 def render_rater(task_name: str, checkpoints: list[Checkpoint]) -> None:
@@ -84,14 +93,7 @@ def render_rater(task_name: str, checkpoints: list[Checkpoint]) -> None:
         st.write("You're done! All examples rated.")
     else:
         checkpoint = checkpoints[st.session_state.index]
-        output_feedback = render_feedback_form(checkpoint, len(checkpoints))
-        if output_feedback:
-            st.write(checkpoint.checkpoint_id)
-            # get_recorder().record_output_feedback(
-            #     task_name=task_name,
-            #     checkpoint_id=checkpoint.checkpoint_id,
-            #     feedback=output_feedback,
-            # )
+        render_feedback_form(task_name, checkpoint, len(checkpoints))
 
 
 @st.cache_data(show_spinner=False)
@@ -135,10 +137,6 @@ def render_page(
         st.cache_data.clear()
 
     checkpoints = get_checkpoints_to_rate(task_name)
-
-    for checkpoint in checkpoints:
-        st.write(checkpoint.input_variables['query'])
-
     render_rater(task_name, checkpoints)
 
 
