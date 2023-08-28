@@ -7,8 +7,8 @@ from eyeball_pp import (
     set_config,
     TASK_OUTPUT_KEY,
     time_to_str,
-    EvalRecorder,
 )
+from eyeball_pp.recorders import EvalRecorder, FileRecorder
 import json
 import pandas as pd
 import streamlit as st
@@ -331,10 +331,12 @@ def render_page(
     set_config(**eyeball_config)
 
     st.markdown("# Eyeball++ Dashboard")
-    if st.sidebar.button("Refresh Data"):
-        st.cache_data.clear()
 
     recorder = get_recorder()
+    if isinstance(recorder, FileRecorder):
+        if st.sidebar.button("Refresh Data"):
+            st.cache_data.clear()
+
     if task_name is None:
         task_name = st.sidebar.selectbox("Task", recorder.get_task_names())
 
