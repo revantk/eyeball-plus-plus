@@ -1314,10 +1314,13 @@ class Evaluator:
 
     def optimize_policy_based_on_feedback(
         self,
-        grading_criteria: list[Criteria],
-        custom_criteria: dict[str, str],
+        grading_criteria: Optional[list[Criteria]] = None,
+        custom_criteria: Optional[dict[str, str]]=None,
         task_name: Optional[str] = None,
     ) -> None:
+        if not grading_criteria and not custom_criteria:
+            raise ValueError("Must provide either grading_criteria or custom_criteria to optimize")
+        
         task_name = self._get_recorded_task_name(task_name=task_name)
         if task_name is None:
             raise ValueError("Must provide a task_name")
@@ -1331,8 +1334,8 @@ class Evaluator:
             all_checkpoints.extend(checkpoints)
 
         optimize_policy(
-            grading_criteria=grading_criteria,
-            custom_criteria=custom_criteria,
+            grading_criteria=grading_criteria or [],
+            custom_criteria=custom_criteria or {},
             checkpoints=all_checkpoints,
         )
 

@@ -194,6 +194,8 @@ def optimize_policy(
     )
 
     disagreements: list[str] = []
+    print(f"Trying to optimize criteria based on {len(checkpoints)} checkpoints")
+
     for checkpoint in checkpoints:
         if (
             checkpoint.scores is None
@@ -214,10 +216,11 @@ def optimize_policy(
                 disagreements.append(_capture_disagreement(checkpoint))
 
     if len(disagreements) == 0:
+        print(f"No disagreements found for {criteria}, nothing to optimize")
         return None
 
     disagreements_str = "\n\n".join(disagreements[:3])
-    print(disagreements_str)
+    print(f"Optimizing based on \n\n{disagreements_str}")
 
     response = openai.ChatCompletion.create(
         model="gpt-4",
@@ -234,4 +237,5 @@ def optimize_policy(
         ],
     )
     print(response["choices"][0]["message"]["content"])
+    print(f"New policy above ^")
     return None
