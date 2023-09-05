@@ -1,4 +1,5 @@
 import eyeball_pp
+from eyeball_pp.classes import Criteria
 import openai
 
 
@@ -53,15 +54,15 @@ if __name__ == "__main__":
     #     api_key="eb26fea1b82d486b9edc58dcb882ea23", api_url="http://localhost:8081"
     # )
 
-    agent = QAAgent()
+    # agent = QAAgent()
 
-    agent.ask(
-        question="What color is the fox?",
-    )
+    # agent.ask(
+    #     question="What color is the fox?",
+    # )
 
-    agent.ask(
-        question="What color is the dog?",
-    )
+    # agent.ask(
+    #     question="What color is the dog?",
+    # )
 
     # agent.ask(
     #     question="What color is the bat ?",
@@ -70,8 +71,8 @@ if __name__ == "__main__":
     # eyeball_pp.calculate_system_health()
     # eyeball_pp.evaluate_system()
 
-    for input_vars in eyeball_pp.rerun_recorded_examples(input_names=['question'], eval_params_list=[{"temperature": 0.2}]):
-        agent.ask(input_vars["question"])
+    # for input_vars in eyeball_pp.rerun_recorded_examples(input_names=['question'], eval_params_list=[{"temperature": 0.2}]):
+    #     agent.ask(input_vars["question"])
 
     # eyeball_pp.cleanup_old_checkpoints()
 
@@ -90,3 +91,6 @@ if __name__ == "__main__":
 
     # eyeball_pp.evaluate_system()
     # eyeball_pp.calculate_system_health()
+    eyeball_pp.optimize_policy_based_on_feedback(
+        grading_criteria=[Criteria.CORRECTNESS]
+    )
