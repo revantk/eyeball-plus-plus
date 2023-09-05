@@ -11,6 +11,7 @@ from eyeball_pp import (
 )
 from eyeball_pp.classes import MultiOutputFeedback
 import streamlit as st
+import streamlit.components.v1 as components
 from typing import Optional, Any
 from fire import Fire
 
@@ -36,18 +37,23 @@ def render_variable(title: str, value: Any) -> None:
 
 
 def scroll_to_top():
-    st.markdown("""
-        <script>
-        window.scrollTo(0,0);
-        </script>
-        """, unsafe_allow_html=True)
+    import time
+    components.html(
+        f"""
+            <p>{time.time()}</p>
+            <script>
+                window.parent.document.querySelector('section.main').scrollTo(0, 0);
+            </script>
+        """,
+        height=0
+    )
 
 
-def submit_feedback(
-        task_name: str, checkpoint: Checkpoint, rating: str, feedback: str
-) -> None:
+def submit_feedback(task_name: str, checkpoint: Checkpoint) -> None:
     st.session_state.index += 1
-    scroll_to_top()
+    rating = st.session_state[f"rating-{checkpoint.checkpoint_id}"]
+    feedback = st.session_state[f"feedback-{checkpoint.checkpoint_id}"]
+
     output_feedback = MultiOutputFeedback({
         TASK_OUTPUT_KEY: OutputFeedback(
             result=FEEDBACK_MAP[rating],
@@ -75,15 +81,16 @@ def render_feedback_form(
         render_variable("output", checkpoint.output)
         render_divider()
 
-        rating = st.radio(
+        st.radio(
             "**Rating**", FEEDBACK_MAP.keys(), horizontal=True,
             key=f"rating-{checkpoint.checkpoint_id}")
-        feedback = st.text_input(
+        st.text_input(
             "**Feedback**", key=f"feedback-{checkpoint.checkpoint_id}")
-        st.form_submit_button(
-            "Submit",
-            on_click=submit_feedback,
-            args=(task_name, checkpoint, rating, feedback))
+        submit = st.form_submit_button(
+            "Submit", on_click=submit_feedback, args=(task_name, checkpoint))
+
+        if submit:
+            scroll_to_top()
 
 
 def render_rater(task_name: str, checkpoints: list[Checkpoint]) -> None:
