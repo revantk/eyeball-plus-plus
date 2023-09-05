@@ -61,9 +61,6 @@ class Checkpoint:
     feedback: MultiOutputFeedback = dataclasses.field(
         default_factory=MultiOutputFeedback
     )
-    criteria_feedback: MultiOutputFeedback = dataclasses.field(
-        default_factory=MultiOutputFeedback
-    )
     scores: MultiOutputScores = dataclasses.field(default_factory=MultiOutputScores)
     rerun_metadata: dict[str, str] = dataclasses.field(default_factory=dict)
     tags: list[str] = dataclasses.field(default_factory=list)
@@ -200,8 +197,7 @@ class EvalRecorder(Protocol):
         self,
         task_name: str,
         checkpoint_id: str,
-        feedback: Optional[MultiOutputFeedback]=None,
-        criteria_feedback: Optional[MultiOutputFeedback] =None,
+        feedback: MultiOutputFeedback,
     ) -> None:
         ...
 
@@ -437,23 +433,15 @@ class ApiClientRecorder(EvalRecorder):
         )
 
     def record_output_feedback(
-        self, task_name: str, checkpoint_id: str, feedback: Optional[MultiOutputFeedback]=None, criteria_feedback: Optional[MultiOutputFeedback] = None
+        self, task_name: str, checkpoint_id: str, feedback: MultiOutputFeedback
     ) -> None:
-        if feedback is None and criteria_feedback is None:
-            raise ValueError("Either feedback or grader_feedback must be provided")
-        
-        json_data = {
-            "task_name": task_name,
-            "checkpoint_id": checkpoint_id,
-        }
-        if feedback is not None:
-            json_data["feedback"] = feedback.as_dict()
-        if criteria_feedback is not None:
-            json_data["criteria_feedback"] = criteria_feedback.as_dict()
-
         requests.post(
             f"{self.url}/record_output_feedback",
-            json=json_data,
+            json={
+                "task_name": task_name,
+                "checkpoint_id": checkpoint_id,
+                "feedback": feedback.as_dict(),
+            },
             headers=self._get_headers(),
         )
 
@@ -746,16 +734,12 @@ class MemoryRecorder(EvalRecorder):
         self,
         task_name: str,
         checkpoint_id: str,
-        feedback: Optional[MultiOutputFeedback]=None,
-        criteria_feedback: Optional[MultiOutputFeedback]=None,
+        feedback: MultiOutputFeedback,
     ) -> None:
         checkpoint = self._fetch_or_create_checkpoint(
             task_name=task_name, checkpoint_id=checkpoint_id
         )
-        if feedback is not None:
-            checkpoint.feedback = feedback
-        if criteria_feedback is not None:
-            checkpoint.criteria_feedback = criteria_feedback
+        checkpoint.feedback = feedback
 
     def get_task_names(self) -> list[str]:
         return list(self.tasks.keys())
@@ -1044,30 +1028,16 @@ class FileRecorder(EvalRecorder):
         self,
         task_name: str,
         checkpoint_id: str,
-        feedback: Optional[MultiOutputFeedback]=None,
-        criteria_feedback: Optional[MultiOutputFeedback]=None,
+        feedback: MultiOutputFeedback,
     ) -> None:
-        if feedback is None and criteria_feedback is None:
-            raise ValueError("Either feedback or grader_feedback must be provided")
-        
-        if feedback is not None:
-            self._record_checkpoint(
-                task_name=task_name,
-                checkpoint_id=checkpoint_id,
-                prefixes=[],
-                name="feedback",
-                value=feedback.as_dict(),
-                flush=True,
-            )
-        if criteria_feedback is not None:
-            self._record_checkpoint(
-                task_name=task_name,
-                checkpoint_id=checkpoint_id,
-                prefixes=[],
-                name="criteria_feedback",
-                value=criteria_feedback.as_dict(),
-                flush=True,
-            )
+        self._record_checkpoint(
+            task_name=task_name,
+            checkpoint_id=checkpoint_id,
+            prefixes=[],
+            name="feedback",
+            value=feedback.as_dict(),
+            flush=True,
+        )
 
     def record_output_scores(
         self, task_name: str, checkpoint_id: str, scores: MultiOutputScores
@@ -1365,14 +1335,12 @@ class DiskRecorder(EvalRecorder):
         self,
         task_name: str,
         checkpoint_id: str,
-        feedback: Optional[MultiOutputFeedback]=None,
-        criteria_feedback: Optional[MultiOutputFeedback] = None,
+        feedback: MultiOutputFeedback,
     ) -> None:
         self.memory_recorder.record_output_feedback(
             task_name=task_name,
             checkpoint_id=checkpoint_id,
             feedback=feedback,
-            criteria_feedback=criteria_feedback,
         )
         pickle.dump(self.memory_recorder, open(self.file_name, "wb"))
 
